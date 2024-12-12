@@ -1,0 +1,554 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		A7ADAC722D0AA85800B3368C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A7ADAC582D0AA85600B3368C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A7ADAC5F2D0AA85600B3368C;
+			remoteInfo = "FRED-Ultra";
+		};
+		A7ADAC7C2D0AA85800B3368C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A7ADAC582D0AA85600B3368C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A7ADAC5F2D0AA85600B3368C;
+			remoteInfo = "FRED-Ultra";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A7ADAC602D0AA85600B3368C /* FRED-Ultra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "FRED-Ultra.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7ADAC712D0AA85800B3368C /* FRED-UltraTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "FRED-UltraTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7ADAC7B2D0AA85800B3368C /* FRED-UltraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "FRED-UltraUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A7ADAC622D0AA85600B3368C /* FRED-Ultra */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "FRED-Ultra";
+			sourceTree = "<group>";
+		};
+		A7ADAC742D0AA85800B3368C /* FRED-UltraTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "FRED-UltraTests";
+			sourceTree = "<group>";
+		};
+		A7ADAC7E2D0AA85800B3368C /* FRED-UltraUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "FRED-UltraUITests";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A7ADAC5D2D0AA85600B3368C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7ADAC6E2D0AA85800B3368C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7ADAC782D0AA85800B3368C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A7ADAC572D0AA85600B3368C = {
+			isa = PBXGroup;
+			children = (
+				A7ADAC622D0AA85600B3368C /* FRED-Ultra */,
+				A7ADAC742D0AA85800B3368C /* FRED-UltraTests */,
+				A7ADAC7E2D0AA85800B3368C /* FRED-UltraUITests */,
+				A7ADAC612D0AA85600B3368C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A7ADAC612D0AA85600B3368C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A7ADAC602D0AA85600B3368C /* FRED-Ultra.app */,
+				A7ADAC712D0AA85800B3368C /* FRED-UltraTests.xctest */,
+				A7ADAC7B2D0AA85800B3368C /* FRED-UltraUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A7ADAC5F2D0AA85600B3368C /* FRED-Ultra */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A7ADAC852D0AA85800B3368C /* Build configuration list for PBXNativeTarget "FRED-Ultra" */;
+			buildPhases = (
+				A7ADAC5C2D0AA85600B3368C /* Sources */,
+				A7ADAC5D2D0AA85600B3368C /* Frameworks */,
+				A7ADAC5E2D0AA85600B3368C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A7ADAC622D0AA85600B3368C /* FRED-Ultra */,
+			);
+			name = "FRED-Ultra";
+			packageProductDependencies = (
+			);
+			productName = "FRED-Ultra";
+			productReference = A7ADAC602D0AA85600B3368C /* FRED-Ultra.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A7ADAC702D0AA85800B3368C /* FRED-UltraTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A7ADAC882D0AA85800B3368C /* Build configuration list for PBXNativeTarget "FRED-UltraTests" */;
+			buildPhases = (
+				A7ADAC6D2D0AA85800B3368C /* Sources */,
+				A7ADAC6E2D0AA85800B3368C /* Frameworks */,
+				A7ADAC6F2D0AA85800B3368C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A7ADAC732D0AA85800B3368C /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A7ADAC742D0AA85800B3368C /* FRED-UltraTests */,
+			);
+			name = "FRED-UltraTests";
+			packageProductDependencies = (
+			);
+			productName = "FRED-UltraTests";
+			productReference = A7ADAC712D0AA85800B3368C /* FRED-UltraTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A7ADAC7A2D0AA85800B3368C /* FRED-UltraUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A7ADAC8B2D0AA85800B3368C /* Build configuration list for PBXNativeTarget "FRED-UltraUITests" */;
+			buildPhases = (
+				A7ADAC772D0AA85800B3368C /* Sources */,
+				A7ADAC782D0AA85800B3368C /* Frameworks */,
+				A7ADAC792D0AA85800B3368C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A7ADAC7D2D0AA85800B3368C /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A7ADAC7E2D0AA85800B3368C /* FRED-UltraUITests */,
+			);
+			name = "FRED-UltraUITests";
+			packageProductDependencies = (
+			);
+			productName = "FRED-UltraUITests";
+			productReference = A7ADAC7B2D0AA85800B3368C /* FRED-UltraUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A7ADAC582D0AA85600B3368C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A7ADAC5F2D0AA85600B3368C = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					A7ADAC702D0AA85800B3368C = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A7ADAC5F2D0AA85600B3368C;
+					};
+					A7ADAC7A2D0AA85800B3368C = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A7ADAC5F2D0AA85600B3368C;
+					};
+				};
+			};
+			buildConfigurationList = A7ADAC5B2D0AA85600B3368C /* Build configuration list for PBXProject "FRED-Ultra" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A7ADAC572D0AA85600B3368C;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A7ADAC612D0AA85600B3368C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A7ADAC5F2D0AA85600B3368C /* FRED-Ultra */,
+				A7ADAC702D0AA85800B3368C /* FRED-UltraTests */,
+				A7ADAC7A2D0AA85800B3368C /* FRED-UltraUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A7ADAC5E2D0AA85600B3368C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7ADAC6F2D0AA85800B3368C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7ADAC792D0AA85800B3368C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A7ADAC5C2D0AA85600B3368C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7ADAC6D2D0AA85800B3368C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7ADAC772D0AA85800B3368C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A7ADAC732D0AA85800B3368C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A7ADAC5F2D0AA85600B3368C /* FRED-Ultra */;
+			targetProxy = A7ADAC722D0AA85800B3368C /* PBXContainerItemProxy */;
+		};
+		A7ADAC7D2D0AA85800B3368C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A7ADAC5F2D0AA85600B3368C /* FRED-Ultra */;
+			targetProxy = A7ADAC7C2D0AA85800B3368C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A7ADAC832D0AA85800B3368C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		A7ADAC842D0AA85800B3368C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		A7ADAC862D0AA85800B3368C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "FRED-Ultra/FRED_Ultra.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"FRED-Ultra/Preview Content\"";
+				DEVELOPMENT_TEAM = X8AD8YC886;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-Ultra";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A7ADAC872D0AA85800B3368C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "FRED-Ultra/FRED_Ultra.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"FRED-Ultra/Preview Content\"";
+				DEVELOPMENT_TEAM = X8AD8YC886;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-Ultra";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A7ADAC892D0AA85800B3368C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X8AD8YC886;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-UltraTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FRED-Ultra.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FRED-Ultra";
+			};
+			name = Debug;
+		};
+		A7ADAC8A2D0AA85800B3368C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X8AD8YC886;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-UltraTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FRED-Ultra.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FRED-Ultra";
+			};
+			name = Release;
+		};
+		A7ADAC8C2D0AA85800B3368C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X8AD8YC886;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-UltraUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = "FRED-Ultra";
+			};
+			name = Debug;
+		};
+		A7ADAC8D2D0AA85800B3368C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = X8AD8YC886;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-UltraUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = "FRED-Ultra";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A7ADAC5B2D0AA85600B3368C /* Build configuration list for PBXProject "FRED-Ultra" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7ADAC832D0AA85800B3368C /* Debug */,
+				A7ADAC842D0AA85800B3368C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A7ADAC852D0AA85800B3368C /* Build configuration list for PBXNativeTarget "FRED-Ultra" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7ADAC862D0AA85800B3368C /* Debug */,
+				A7ADAC872D0AA85800B3368C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A7ADAC882D0AA85800B3368C /* Build configuration list for PBXNativeTarget "FRED-UltraTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7ADAC892D0AA85800B3368C /* Debug */,
+				A7ADAC8A2D0AA85800B3368C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A7ADAC8B2D0AA85800B3368C /* Build configuration list for PBXNativeTarget "FRED-UltraUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7ADAC8C2D0AA85800B3368C /* Debug */,
+				A7ADAC8D2D0AA85800B3368C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A7ADAC582D0AA85600B3368C /* Project object */;
+}
