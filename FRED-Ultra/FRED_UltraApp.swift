@@ -13,5 +13,12 @@ struct FRED_UltraApp: App {
         WindowGroup {
             ContentView()
         }
+
+        #if os(macOS)
+        Settings {
+            SettingsView()
+                .frame(width: 400, height: 300)
+        }
+        #endif
     }
 }
