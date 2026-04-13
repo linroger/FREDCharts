@@ -1,45 +1,34 @@
-import Foundation
 import Combine
+import Foundation
 
 @MainActor
-class SearchViewModel: ObservableObject {
-    @Published var query: String = ""
-    @Published var results: [FREDSeries] = []
-    @Published var isLoading: Bool = false
+final class SearchViewModel: ObservableObject {
+    @Published var query = ""
+    @Published private(set) var results: [FREDSeries] = []
+    @Published private(set) var isLoading = false
     @Published var errorMessage: String?
-    @Published var hasSearched: Bool = false
+    @Published private(set) var hasSearched = false
 
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
 
     init() {
-        // Debounce search
         $query
-            .debounce(for: .milliseconds(400), scheduler: RunLoop.main)
+            .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
             .removeDuplicates()
             .sink { [weak self] searchText in
-                guard let self = self else { return }
-                
-                // Cancel any existing search task
-                self.searchTask?.cancel()
-                
-                if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
-                    self.results = []
-                    self.hasSearched = false
-                    self.errorMessage = nil
-                    return
-                }
-                
-                self.searchTask = Task {
-                    await self.performSearch(query: searchText)
-                }
+                guard let self else { return }
+                self.handleSearchTextChange(searchText)
             }
             .store(in: &cancellables)
     }
 
     func performSearch(query: String) async {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmedQuery.isEmpty else { return }
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            clearResults()
+            return
+        }
 
         isLoading = true
         errorMessage = nil
@@ -47,36 +36,45 @@ class SearchViewModel: ObservableObject {
 
         do {
             let series = try await FREDService.shared.searchSeries(query: trimmedQuery)
-            
-            // Check if task was cancelled
-            if Task.isCancelled { return }
-            
-            self.results = series
-            
-            // Save to recent searches
+            guard !Task.isCancelled else { return }
+
+            results = series
             SettingsManager.shared.addRecentSearch(trimmedQuery)
-        } catch FREDError.missingAPIKey {
-            self.errorMessage = "Please enter your API Key in Settings."
-            self.results = []
+            AppLogger.search.info("Loaded \(series.count) search results for '\(trimmedQuery, privacy: .public)'")
+        } catch is CancellationError {
+            AppLogger.search.debug("Cancelled search for '\(trimmedQuery, privacy: .public)'")
         } catch {
-            if !Task.isCancelled {
-                self.errorMessage = error.localizedDescription
-                self.results = []
-            }
+            guard !Task.isCancelled else { return }
+
+            results = []
+            errorMessage = error.localizedDescription
+            AppLogger.search.error("Search failed for '\(trimmedQuery, privacy: .public)': \(error.localizedDescription, privacy: .public)")
         }
 
         isLoading = false
     }
-    
-    func clearResults() {
-        query = ""
-        results = []
-        hasSearched = false
-        errorMessage = nil
-    }
-    
+
     func refresh() async {
-        guard !query.isEmpty else { return }
         await performSearch(query: query)
+    }
+
+    func clearResults() {
+        results = []
+        errorMessage = nil
+        hasSearched = false
+    }
+
+    private func handleSearchTextChange(_ searchText: String) {
+        searchTask?.cancel()
+
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            clearResults()
+            return
+        }
+
+        searchTask = Task { [weak self] in
+            await self?.performSearch(query: trimmed)
+        }
     }
 }

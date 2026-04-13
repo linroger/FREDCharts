@@ -1,375 +1,337 @@
+import AppKit
 import Foundation
-import SwiftUI
 
 @MainActor
-class SeriesDetailViewModel: ObservableObject {
+final class SeriesDetailViewModel: ObservableObject {
     @Published var mainSeries: FREDSeries
-    @Published var seriesData: [String: [FREDObservation]] = [:]
-    @Published var additionalSeries: [FREDSeries] = []
-    @Published var isLoading: Bool = false
+    @Published private(set) var seriesData: [String: [FREDObservation]] = [:]
+    @Published private(set) var additionalSeries: [FREDSeries] = []
+    @Published private(set) var isLoading = false
     @Published var errorMessage: String?
     @Published var selectedDateRange: DateRangeOption = .fiveYears
     @Published var selectedObservation: ChartDataPoint?
-    @Published var chartDataPoints: [ChartDataPoint] = []
-    @Published var unitsWarning: String?
-    
-    // Statistics
-    @Published var statistics: SeriesStatistics?
+    @Published private(set) var chartDataPoints: [ChartDataPoint] = []
+    @Published private(set) var rebasedChartDataPoints: [ChartDataPoint] = []
+    @Published private(set) var unitsInfo: String?
+    @Published var isNormalized = false
+    @Published private(set) var statistics: SeriesStatistics?
+    @Published private(set) var insights: [SeriesInsight] = []
 
     init(series: FREDSeries) {
-        self.mainSeries = series
+        mainSeries = series
     }
 
     var allSeries: [FREDSeries] {
         [mainSeries] + additionalSeries
     }
-    
+
     var mainSeriesObservations: [FREDObservation] {
         seriesData[mainSeries.id] ?? []
     }
-    
+
     var filteredObservations: [FREDObservation] {
         filterObservations(mainSeriesObservations, by: selectedDateRange)
     }
-    
+
     var tableRows: [ObservationRow] {
         filteredObservations.reversed().map { ObservationRow(observation: $0, units: mainSeries.units) }
     }
-    
-    // Unit-aware value formatter for the main series
+
+    var canNormalize: Bool {
+        allSeries.count > 1
+    }
+
+    var displayDataPoints: [ChartDataPoint] {
+        isNormalized ? rebasedChartDataPoints : chartDataPoints
+    }
+
     var valueFormatter: ValueFormatter {
-        ValueFormatter(units: mainSeries.units)
+        ValueFormatter(units: isNormalized ? "Index" : mainSeries.units)
+    }
+
+    var seriesCountLabel: String {
+        allSeries.count == 1 ? "1 series loaded" : "\(allSeries.count) series loaded"
     }
 
     func loadData() async {
         isLoading = true
         errorMessage = nil
-
-        let idsToFetch = allSeries.map { $0.id }
+        AppLogger.detail.info("Loading data for \(self.allSeries.count) series")
 
         do {
             let data = try await FREDService.shared.getMultipleSeriesObservations(
-                seriesIds: idsToFetch,
+                seriesIds: allSeries.map(\.id),
                 startDate: selectedDateRange.startDate
             )
-            self.seriesData = data
-            updateChartDataPoints()
-            calculateStatistics()
-            checkUnitsCompatibility()
+            seriesData = data
+            rebuildDerivedState()
         } catch {
-            self.errorMessage = error.localizedDescription
+            errorMessage = error.localizedDescription
+            AppLogger.detail.error("Failed to load series detail: \(error.localizedDescription, privacy: .public)")
         }
 
         isLoading = false
     }
-    
+
     func refreshData() async {
         await loadData()
-    }
-    
-    private func checkUnitsCompatibility() {
-        guard additionalSeries.count > 0 else {
-            unitsWarning = nil
-            return
-        }
-        
-        let mainUnits = mainSeries.units.lowercased()
-        let incompatible = additionalSeries.filter { 
-            $0.units.lowercased() != mainUnits 
-        }
-        
-        if !incompatible.isEmpty {
-            unitsWarning = "Warning: Series have different units and may not be directly comparable."
-        } else {
-            unitsWarning = nil
-        }
-    }
-    
-    private func updateChartDataPoints() {
-        var points: [ChartDataPoint] = []
-        
-        for series in allSeries {
-            if let observations = seriesData[series.id] {
-                let filtered = filterObservations(observations, by: selectedDateRange)
-                for obs in filtered {
-                    if let point = ChartDataPoint(observation: obs, seriesId: series.id, seriesTitle: series.title) {
-                        points.append(point)
-                    }
-                }
-            }
-        }
-        
-        chartDataPoints = points
-    }
-    
-    private func filterObservations(_ observations: [FREDObservation], by range: DateRangeOption) -> [FREDObservation] {
-        guard let startDate = range.startDate else {
-            return observations
-        }
-        
-        return observations.filter { obs in
-            guard let date = obs.dateObject else { return false }
-            return date >= startDate
-        }
-    }
-    
-    private func calculateStatistics() {
-        let observations = filteredObservations
-        guard !observations.isEmpty else {
-            statistics = nil
-            return
-        }
-        
-        let values = observations.compactMap { $0.doubleValue }
-        guard !values.isEmpty else {
-            statistics = nil
-            return
-        }
-        
-        let sortedValues = values.sorted()
-        let sum = values.reduce(0, +)
-        let mean = sum / Double(values.count)
-        
-        let squaredDiffs = values.map { pow($0 - mean, 2) }
-        let variance = squaredDiffs.reduce(0, +) / Double(values.count)
-        let stdDev = sqrt(variance)
-        
-        let latestValue = values.last ?? 0
-        let previousValue = values.count > 1 ? values[values.count - 2] : latestValue
-        let change = latestValue - previousValue
-        let percentChange = previousValue != 0 ? (change / abs(previousValue)) * 100 : 0
-        
-        statistics = SeriesStatistics(
-            count: values.count,
-            min: sortedValues.first ?? 0,
-            max: sortedValues.last ?? 0,
-            mean: mean,
-            median: sortedValues[sortedValues.count / 2],
-            standardDeviation: stdDev,
-            latestValue: latestValue,
-            latestChange: change,
-            latestPercentChange: percentChange,
-            units: mainSeries.units
-        )
     }
 
     func addSeries(_ series: FREDSeries) {
         guard !allSeries.contains(where: { $0.id == series.id }) else { return }
         additionalSeries.append(series)
-        Task {
-            await loadData()
-        }
+        AppLogger.detail.info("Added comparison series \(series.id, privacy: .public)")
+        Task { await loadData() }
     }
 
     func removeSeries(_ series: FREDSeries) {
-        if series.id == mainSeries.id { return }
+        guard series.id != mainSeries.id else { return }
         additionalSeries.removeAll { $0.id == series.id }
         seriesData.removeValue(forKey: series.id)
-        updateChartDataPoints()
-        checkUnitsCompatibility()
+        AppLogger.detail.info("Removed comparison series \(series.id, privacy: .public)")
+        rebuildDerivedState()
     }
-    
+
     func updateDateRange(_ range: DateRangeOption) {
+        guard selectedDateRange != range else { return }
         selectedDateRange = range
-        Task {
-            await loadData()
-        }
+        Task { await loadData() }
     }
-    
-    // MARK: - Export Functions
-    
+
+    func setNormalization(_ enabled: Bool) {
+        guard canNormalize else {
+            isNormalized = false
+            return
+        }
+
+        isNormalized = enabled
+        updateUnitsInfo()
+    }
+
     func exportData(format: ExportFormat) {
-        let observations = filteredObservations
-        
         let content: String
+
         switch format {
         case .csv:
-            content = ExportService.exportToCSV(series: mainSeries, observations: observations)
+            content = ExportService.exportToCSV(series: mainSeries, observations: filteredObservations)
         case .json:
-            content = ExportService.exportToJSON(series: mainSeries, observations: observations)
+            content = ExportService.exportToJSON(series: mainSeries, observations: filteredObservations)
         }
-        
-        let filename = "\(mainSeries.id)_\(selectedDateRange.rawValue.replacingOccurrences(of: " ", with: "_"))"
+
+        let filename = "\(mainSeries.id)-\(selectedDateRange.rawValue.replacingOccurrences(of: " ", with: "-").lowercased())"
         ExportService.saveFile(content: content, filename: filename, format: format)
+        AppLogger.export.info("Requested \(format.rawValue, privacy: .public) export for \(self.mainSeries.id, privacy: .public)")
     }
-    
+
     func copyToClipboard() {
-        let observations = filteredObservations
-        var text = "Date\tValue\n"
-        for obs in observations {
-            text += "\(obs.date)\t\(obs.value)\n"
-        }
-        
+        let lines = filteredObservations.map { "\($0.date)\t\($0.value)" }
+        let text = (["Date\tValue"] + lines).joined(separator: "\n")
+
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        AppLogger.export.info("Copied \(self.filteredObservations.count) rows to the clipboard")
     }
-}
 
-// MARK: - Value Formatter (Unit-Aware)
+    private func rebuildDerivedState() {
+        chartDataPoints = makeChartDataPoints(rebased: false)
+        rebasedChartDataPoints = makeChartDataPoints(rebased: true)
+        reconcileNormalizationMode()
+        calculateStatistics()
+        buildInsights()
+        updateUnitsInfo()
+    }
 
-struct ValueFormatter {
-    let units: String
-    
-    private var isBillions: Bool {
-        units.lowercased().contains("billion")
-    }
-    
-    private var isMillions: Bool {
-        units.lowercased().contains("million")
-    }
-    
-    private var isPercent: Bool {
-        units.lowercased().contains("percent")
-    }
-    
-    private var isDollars: Bool {
-        units.lowercased().contains("dollar")
-    }
-    
-    private var isIndex: Bool {
-        units.lowercased().contains("index")
-    }
-    
-    /// Format a raw value from the API with full context
-    func formatValue(_ value: Double, compact: Bool = false) -> String {
-        if isPercent {
-            return String(format: "%.2f%%", value)
+    private func reconcileNormalizationMode() {
+        if !canNormalize {
+            isNormalized = false
+            return
         }
-        
-        if isBillions {
-            // Value is already in billions, convert to human-readable
-            return formatCurrency(value * 1_000_000_000, compact: compact)
+
+        let uniqueUnits = Set(allSeries.map { $0.units.lowercased() })
+        if uniqueUnits.count > 1 {
+            isNormalized = true
         }
-        
-        if isMillions {
-            // Value is already in millions
-            return formatCurrency(value * 1_000_000, compact: compact)
-        }
-        
-        if isDollars {
-            return formatCurrency(value, compact: compact)
-        }
-        
-        if isIndex {
-            return String(format: "%.1f", value)
-        }
-        
-        // Default formatting
-        return formatDecimal(value)
     }
-    
-    /// Format for chart Y-axis labels
-    func formatAxisValue(_ value: Double) -> String {
-        if isPercent {
-            return String(format: "%.1f%%", value)
+
+    private func makeChartDataPoints(rebased: Bool) -> [ChartDataPoint] {
+        var points: [ChartDataPoint] = []
+
+        for series in allSeries {
+            let observations = filterObservations(seriesData[series.id] ?? [], by: selectedDateRange)
+            let baseValue = observations.compactMap(\.doubleValue).first
+
+            for observation in observations {
+                guard let date = observation.dateObject,
+                      let rawValue = observation.doubleValue else {
+                    continue
+                }
+
+                let value: Double
+                if rebased, let baseValue, baseValue != 0 {
+                    value = (rawValue / baseValue) * 100
+                } else {
+                    value = rawValue
+                }
+
+                points.append(
+                    ChartDataPoint(
+                        seriesId: series.id,
+                        seriesTitle: series.title,
+                        date: date,
+                        value: value
+                    )
+                )
+            }
         }
-        
-        if isBillions {
-            // Value on axis is already multiplied, so divide back
-            let actualValue = value
-            if actualValue >= 1_000 {
-                return "$\(formatCompact(actualValue / 1_000))T"
+
+        return points
+    }
+
+    private func filterObservations(_ observations: [FREDObservation], by range: DateRangeOption) -> [FREDObservation] {
+        guard let startDate = range.startDate else { return observations }
+
+        return observations.filter { observation in
+            guard let date = observation.dateObject else { return false }
+            return date >= startDate
+        }
+    }
+
+    private func calculateStatistics() {
+        let typedObservations = filteredObservations.compactMap { observation -> (Date, Double)? in
+            guard let date = observation.dateObject,
+                  let value = observation.doubleValue else {
+                return nil
+            }
+            return (date, value)
+        }
+
+        guard !typedObservations.isEmpty else {
+            statistics = nil
+            return
+        }
+
+        let values = typedObservations.map(\.1)
+        let sortedValues = values.sorted()
+        let sum = values.reduce(0, +)
+        let mean = sum / Double(values.count)
+        let variance = values.map { pow($0 - mean, 2) }.reduce(0, +) / Double(values.count)
+        let latestValue = values.last ?? 0
+        let previousValue = values.dropLast().last ?? latestValue
+        let latestChange = latestValue - previousValue
+        let latestPercentChange = previousValue == 0 ? 0 : (latestChange / abs(previousValue)) * 100
+        let firstValue = values.first ?? latestValue
+        let totalChange = latestValue - firstValue
+        let years = max((typedObservations.last?.0.timeIntervalSince(typedObservations.first?.0 ?? Date()) ?? 0) / (60 * 60 * 24 * 365.25), 0)
+
+        let annualizedChange: Double
+        if years > 0 {
+            if firstValue > 0, latestValue > 0 {
+                annualizedChange = (pow(latestValue / firstValue, 1 / years) - 1) * 100
+            } else if firstValue != 0 {
+                annualizedChange = ((totalChange / abs(firstValue)) / years) * 100
             } else {
-                return "$\(formatCompact(actualValue))B"
+                annualizedChange = 0
             }
-        }
-        
-        if isMillions {
-            let actualValue = value
-            if actualValue >= 1_000 {
-                return "$\(formatCompact(actualValue / 1_000))B"
-            } else {
-                return "$\(formatCompact(actualValue))M"
-            }
-        }
-        
-        if isDollars {
-            return formatCurrency(value, compact: true)
-        }
-        
-        return formatCompact(value)
-    }
-    
-    private func formatCurrency(_ value: Double, compact: Bool) -> String {
-        if compact {
-            if abs(value) >= 1_000_000_000_000 {
-                return String(format: "$%.1fT", value / 1_000_000_000_000)
-            } else if abs(value) >= 1_000_000_000 {
-                return String(format: "$%.1fB", value / 1_000_000_000)
-            } else if abs(value) >= 1_000_000 {
-                return String(format: "$%.1fM", value / 1_000_000)
-            } else if abs(value) >= 1_000 {
-                return String(format: "$%.1fK", value / 1_000)
-            }
-        }
-        
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencySymbol = "$"
-        formatter.maximumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? "$\(value)"
-    }
-    
-    private func formatDecimal(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
-    }
-    
-    private func formatCompact(_ value: Double) -> String {
-        if abs(value) >= 1_000_000_000_000 {
-            return String(format: "%.1fT", value / 1_000_000_000_000)
-        } else if abs(value) >= 1_000_000_000 {
-            return String(format: "%.1fB", value / 1_000_000_000)
-        } else if abs(value) >= 1_000_000 {
-            return String(format: "%.1fM", value / 1_000_000)
-        } else if abs(value) >= 1_000 {
-            return String(format: "%.1fK", value / 1_000)
         } else {
-            return String(format: "%.1f", value)
+            annualizedChange = 0
         }
-    }
-}
 
-// MARK: - Statistics Model
-struct SeriesStatistics {
-    let count: Int
-    let min: Double
-    let max: Double
-    let mean: Double
-    let median: Double
-    let standardDeviation: Double
-    let latestValue: Double
-    let latestChange: Double
-    let latestPercentChange: Double
-    let units: String
-    
-    private var formatter: ValueFormatter {
-        ValueFormatter(units: units)
+        let median: Double
+        if sortedValues.count.isMultiple(of: 2), sortedValues.count >= 2 {
+            let upperIndex = sortedValues.count / 2
+            median = (sortedValues[upperIndex - 1] + sortedValues[upperIndex]) / 2
+        } else {
+            median = sortedValues[sortedValues.count / 2]
+        }
+
+        statistics = SeriesStatistics(
+            count: values.count,
+            min: sortedValues.first ?? 0,
+            max: sortedValues.last ?? 0,
+            mean: mean,
+            median: median,
+            standardDeviation: sqrt(variance),
+            latestValue: latestValue,
+            latestChange: latestChange,
+            latestPercentChange: latestPercentChange,
+            firstValue: firstValue,
+            totalChange: totalChange,
+            annualizedChange: annualizedChange,
+            range: (sortedValues.last ?? 0) - (sortedValues.first ?? 0),
+            units: mainSeries.units
+        )
     }
-    
-    var formattedMin: String { formatter.formatValue(min, compact: true) }
-    var formattedMax: String { formatter.formatValue(max, compact: true) }
-    var formattedMean: String { formatter.formatValue(mean, compact: true) }
-    var formattedMedian: String { formatter.formatValue(median, compact: true) }
-    var formattedStdDev: String { formatNumber(standardDeviation) }
-    var formattedLatestValue: String { formatter.formatValue(latestValue, compact: true) }
-    var formattedLatestChange: String {
-        let sign = latestChange >= 0 ? "+" : ""
-        return "\(sign)\(formatter.formatValue(latestChange, compact: true))"
+
+    private func buildInsights() {
+        guard let statistics else {
+            insights = []
+            return
+        }
+
+        let percentile: Double
+        if statistics.range == 0 {
+            percentile = 100
+        } else {
+            percentile = ((statistics.latestValue - statistics.min) / statistics.range) * 100
+        }
+
+        let trendDescriptor: String
+        switch statistics.latestPercentChange {
+        case let change where change > 1:
+            trendDescriptor = "Momentum is trending upward versus the prior observation."
+        case let change where change < -1:
+            trendDescriptor = "Momentum is trending downward versus the prior observation."
+        default:
+            trendDescriptor = "The latest reading is broadly flat versus the prior observation."
+        }
+
+        insights = [
+            SeriesInsight(
+                title: "Range Position",
+                value: String(format: "%.0f%%", percentile),
+                detail: "Latest value sits \(String(format: "%.0f", percentile))% of the way between the selected range's low and high.",
+                symbol: "scope"
+            ),
+            SeriesInsight(
+                title: "Period Change",
+                value: statistics.formattedTotalChange,
+                detail: "Change from the first to the latest observation in the current time window.",
+                symbol: "arrow.left.and.right"
+            ),
+            SeriesInsight(
+                title: "Annualized Drift",
+                value: statistics.formattedAnnualizedChange,
+                detail: "Compound annualized change across the selected date range.",
+                symbol: "point.topleft.down.curvedto.point.bottomright.up"
+            ),
+            SeriesInsight(
+                title: "Volatility",
+                value: statistics.formattedStdDev,
+                detail: "Standard deviation of the visible observations.",
+                symbol: "waveform.path.ecg"
+            ),
+            SeriesInsight(
+                title: "Trend Read",
+                value: statistics.formattedPercentChange,
+                detail: trendDescriptor,
+                symbol: "chart.line.uptrend.xyaxis"
+            )
+        ]
     }
-    var formattedPercentChange: String {
-        let sign = latestPercentChange >= 0 ? "+" : ""
-        return "\(sign)\(String(format: "%.2f", latestPercentChange))%"
-    }
-    
-    private func formatNumber(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+
+    private func updateUnitsInfo() {
+        guard canNormalize else {
+            unitsInfo = nil
+            return
+        }
+
+        let uniqueUnits = Set(allSeries.map(\.units))
+        if isNormalized {
+            unitsInfo = "Comparison mode rebases each series to 100 at the start of the selected range."
+        } else if uniqueUnits.count > 1 {
+            unitsInfo = "These series use different units. Enable comparison mode to compare relative movement instead of raw values."
+        } else {
+            unitsInfo = "All visible series share the same units. You can still rebase them to compare relative performance."
+        }
     }
 }

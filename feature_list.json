@@ -1,0 +1,98 @@
+[
+  {
+    "id": "feature_api_onboarding",
+    "category": "functional",
+    "description": "First launch guides the user through entering and validating a FRED API key before opening the workspace.",
+    "steps": [
+      "Launch the app without an API key",
+      "See onboarding instructions and API key entry",
+      "Test and save a valid API key",
+      "Transition into the main workspace"
+    ],
+    "passes": false
+  },
+  {
+    "id": "feature_search_workspace",
+    "category": "functional",
+    "description": "Users can search FRED series, browse results, and select a series in a stable macOS sidebar workflow.",
+    "steps": [
+      "Enter a search term in the sidebar",
+      "Receive result rows with key series metadata",
+      "Select a result",
+      "See the detail dashboard update for that series"
+    ],
+    "passes": false
+  },
+  {
+    "id": "feature_persistence",
+    "category": "functional",
+    "description": "Favorites, recent searches, and API settings persist locally between app sessions.",
+    "steps": [
+      "Favorite a series",
+      "Run at least one search",
+      "Reopen the app or refresh the relevant views",
+      "Confirm the saved state is preserved"
+    ],
+    "passes": false
+  },
+  {
+    "id": "feature_series_analytics",
+    "category": "functional",
+    "description": "Series detail shows charting, data tables, and useful calculated insights without runtime or formatting errors.",
+    "steps": [
+      "Open a series detail view",
+      "Inspect overview metrics and calculated insights",
+      "Switch between chart, data, and analysis surfaces",
+      "Confirm the displayed metrics are coherent with the dataset"
+    ],
+    "passes": false
+  },
+  {
+    "id": "feature_comparison_and_normalization",
+    "category": "functional",
+    "description": "Users can compare multiple series and see sane handling when units differ.",
+    "steps": [
+      "Open a primary series",
+      "Add an additional series for comparison",
+      "Inspect the combined chart and normalization messaging",
+      "Remove a comparison series cleanly"
+    ],
+    "passes": false
+  },
+  {
+    "id": "feature_export_share",
+    "category": "functional",
+    "description": "Users can export current observations to CSV/JSON and copy values to the clipboard.",
+    "steps": [
+      "Open a populated series",
+      "Export data as CSV",
+      "Export data as JSON",
+      "Copy the visible dataset to the clipboard"
+    ],
+    "passes": false
+  },
+  {
+    "id": "feature_settings_and_help",
+    "category": "quality",
+    "description": "Settings and README clearly explain app setup, capabilities, and operational limits.",
+    "steps": [
+      "Open Settings",
+      "Validate API key guidance and data management actions",
+      "Read the README",
+      "Confirm the documentation matches the current app behavior"
+    ],
+    "passes": false
+  },
+  {
+    "id": "feature_build_and_test_health",
+    "category": "quality",
+    "description": "The project builds and the available tests run cleanly from the command line.",
+    "steps": [
+      "Run the build command",
+      "Run the test command",
+      "Confirm there are no compile errors",
+      "Confirm test failures are resolved or explicitly documented"
+    ],
+    "passes": true
+  }
+]

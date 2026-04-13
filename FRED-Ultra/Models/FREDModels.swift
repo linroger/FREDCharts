@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - Search Response
+
 struct FREDSearchResponse: Codable {
     let realtimeStart: String?
     let realtimeEnd: String?
@@ -22,6 +23,7 @@ struct FREDSearchResponse: Codable {
 }
 
 // MARK: - Series
+
 struct FREDSeries: Codable, Identifiable, Hashable {
     let id: String
     let title: String
@@ -51,13 +53,30 @@ struct FREDSeries: Codable, Identifiable, Hashable {
         case popularity
         case notes
     }
-    
+
     var formattedDateRange: String {
         "\(observationStart) to \(observationEnd)"
+    }
+
+    var subtitleLine: String {
+        "\(frequency) • \(units)"
+    }
+
+    var shortNotes: String? {
+        guard let notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        if notes.count <= 180 {
+            return notes
+        }
+
+        return String(notes.prefix(177)) + "..."
     }
 }
 
 // MARK: - Observations Response
+
 struct FREDObservationsResponse: Codable {
     let realtimeStart: String?
     let realtimeEnd: String?
@@ -72,7 +91,7 @@ struct FREDObservationsResponse: Codable {
     let offset: Int?
     let limit: Int?
     let observations: [FREDObservation]
-    
+
     enum CodingKeys: String, CodingKey {
         case realtimeStart = "realtime_start"
         case realtimeEnd = "realtime_end"
@@ -89,35 +108,28 @@ struct FREDObservationsResponse: Codable {
 }
 
 // MARK: - Observation
+
 struct FREDObservation: Codable, Identifiable, Hashable {
     var id: String { date }
+
     let realtimeStart: String?
     let realtimeEnd: String?
     let date: String
     let value: String
-    
+
     enum CodingKeys: String, CodingKey {
         case realtimeStart = "realtime_start"
         case realtimeEnd = "realtime_end"
         case date, value
     }
 
-    var doubleValue: Double? {
-        Double(value)
-    }
-    
-    var isValidValue: Bool {
-        value != "." && doubleValue != nil
-    }
-
-    // Shared formatter for performance
-    private static let dateFormatter: DateFormatter = {
+    private static let storageDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.locale = Locale(identifier: "en_US_POSIX")
         return formatter
     }()
-    
+
     private static let displayDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -125,38 +137,52 @@ struct FREDObservation: Codable, Identifiable, Hashable {
         return formatter
     }()
 
+    var doubleValue: Double? {
+        Double(value)
+    }
+
+    var isValidValue: Bool {
+        value != "." && doubleValue != nil
+    }
+
     var dateObject: Date? {
-        Self.dateFormatter.date(from: date)
+        Self.storageDateFormatter.date(from: date)
     }
-    
+
     var formattedDate: String {
-        guard let date = dateObject else { return self.date }
-        return Self.displayDateFormatter.string(from: date)
+        guard let dateObject else { return date }
+        return Self.displayDateFormatter.string(from: dateObject)
     }
-    
+
     var formattedValue: String {
-        guard let value = doubleValue else { return self.value }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? self.value
+        guard let doubleValue else { return value }
+        return ObservationRow.defaultNumberFormatter.string(from: NSNumber(value: doubleValue)) ?? value
     }
 }
 
-// MARK: - Chart Data Point (for charting with valid data only)
-struct ChartDataPoint: Identifiable {
-    let id = UUID()
+// MARK: - Chart Data
+
+struct ChartDataPoint: Identifiable, Hashable {
+    var id: String { "\(seriesId)-\(date.timeIntervalSince1970)" }
+
     let seriesId: String
     let seriesTitle: String
     let date: Date
     let value: Double
-    
+
     init?(observation: FREDObservation, seriesId: String, seriesTitle: String) {
         guard let date = observation.dateObject,
               let value = observation.doubleValue else {
             return nil
         }
+
+        self.seriesId = seriesId
+        self.seriesTitle = seriesTitle
+        self.date = date
+        self.value = value
+    }
+
+    init(seriesId: String, seriesTitle: String, date: Date, value: Double) {
         self.seriesId = seriesId
         self.seriesTitle = seriesTitle
         self.date = date
@@ -164,8 +190,17 @@ struct ChartDataPoint: Identifiable {
     }
 }
 
-// MARK: - Table Row (for table display)
-struct ObservationRow: Identifiable {
+// MARK: - Table Row
+
+struct ObservationRow: Identifiable, Hashable {
+    static let defaultNumberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter
+    }()
+
     let id: String
     let date: String
     let dateObject: Date?
@@ -174,83 +209,44 @@ struct ObservationRow: Identifiable {
     let formattedDate: String
     let formattedValue: String
     let units: String
-    
+
     init(observation: FREDObservation, units: String = "") {
-        self.id = observation.id
-        self.date = observation.date
-        self.dateObject = observation.dateObject
-        self.value = observation.value
-        self.numericValue = observation.doubleValue
-        self.formattedDate = observation.formattedDate
+        id = observation.id
+        date = observation.date
+        dateObject = observation.dateObject
+        value = observation.value
+        numericValue = observation.doubleValue
+        formattedDate = observation.formattedDate
         self.units = units
-        
-        // Unit-aware formatting
-        if let numValue = observation.doubleValue {
-            self.formattedValue = ObservationRow.formatValue(numValue, units: units)
+
+        if let numericValue {
+            formattedValue = ValueFormatter(units: units).formatValue(numericValue, compact: false)
         } else {
-            self.formattedValue = observation.value
+            formattedValue = observation.value
         }
-    }
-    
-    private static func formatValue(_ value: Double, units: String) -> String {
-        let lowerUnits = units.lowercased()
-        
-        if lowerUnits.contains("percent") {
-            return String(format: "%.2f%%", value)
-        }
-        
-        if lowerUnits.contains("billion") && lowerUnits.contains("dollar") {
-            // Value is in billions, display as trillions/billions
-            if value >= 1000 {
-                return String(format: "$%.2fT", value / 1000)
-            } else {
-                return String(format: "$%.2fB", value)
-            }
-        }
-        
-        if lowerUnits.contains("million") && lowerUnits.contains("dollar") {
-            if value >= 1000 {
-                return String(format: "$%.2fB", value / 1000)
-            } else {
-                return String(format: "$%.2fM", value)
-            }
-        }
-        
-        if lowerUnits.contains("dollar") {
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .currency
-            formatter.currencySymbol = "$"
-            formatter.maximumFractionDigits = 2
-            return formatter.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
-        }
-        
-        // Default decimal formatting
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
     }
 }
 
 // MARK: - Favorites
+
 struct FavoriteSeries: Codable, Identifiable, Hashable {
     let id: String
     let title: String
     let units: String
     let frequency: String
     let addedDate: Date
-    
+
     init(from series: FREDSeries) {
-        self.id = series.id
-        self.title = series.title
-        self.units = series.units
-        self.frequency = series.frequency
-        self.addedDate = Date()
+        id = series.id
+        title = series.title
+        units = series.units
+        frequency = series.frequency
+        addedDate = Date()
     }
 }
 
 // MARK: - Date Range Filter
+
 enum DateRangeOption: String, CaseIterable, Identifiable {
     case all = "All Time"
     case oneMonth = "1 Month"
@@ -260,43 +256,242 @@ enum DateRangeOption: String, CaseIterable, Identifiable {
     case fiveYears = "5 Years"
     case tenYears = "10 Years"
     case twentyYears = "20 Years"
-    
+
     var id: String { rawValue }
-    
+
     var startDate: Date? {
         let calendar = Calendar.current
         let now = Date()
+
         switch self {
-        case .all: return nil
-        case .oneMonth: return calendar.date(byAdding: .month, value: -1, to: now)
-        case .threeMonths: return calendar.date(byAdding: .month, value: -3, to: now)
-        case .sixMonths: return calendar.date(byAdding: .month, value: -6, to: now)
-        case .oneYear: return calendar.date(byAdding: .year, value: -1, to: now)
-        case .fiveYears: return calendar.date(byAdding: .year, value: -5, to: now)
-        case .tenYears: return calendar.date(byAdding: .year, value: -10, to: now)
-        case .twentyYears: return calendar.date(byAdding: .year, value: -20, to: now)
+        case .all:
+            return nil
+        case .oneMonth:
+            return calendar.date(byAdding: .month, value: -1, to: now)
+        case .threeMonths:
+            return calendar.date(byAdding: .month, value: -3, to: now)
+        case .sixMonths:
+            return calendar.date(byAdding: .month, value: -6, to: now)
+        case .oneYear:
+            return calendar.date(byAdding: .year, value: -1, to: now)
+        case .fiveYears:
+            return calendar.date(byAdding: .year, value: -5, to: now)
+        case .tenYears:
+            return calendar.date(byAdding: .year, value: -10, to: now)
+        case .twentyYears:
+            return calendar.date(byAdding: .year, value: -20, to: now)
         }
     }
 }
 
 // MARK: - Export Format
+
 enum ExportFormat: String, CaseIterable, Identifiable {
     case csv = "CSV"
     case json = "JSON"
-    
+
     var id: String { rawValue }
-    
+
     var fileExtension: String {
         switch self {
-        case .csv: return "csv"
-        case .json: return "json"
+        case .csv:
+            return "csv"
+        case .json:
+            return "json"
         }
     }
-    
+
     var contentType: String {
         switch self {
-        case .csv: return "text/csv"
-        case .json: return "application/json"
+        case .csv:
+            return "text/csv"
+        case .json:
+            return "application/json"
         }
     }
+}
+
+// MARK: - Formatting Helpers
+
+struct ValueFormatter {
+    let units: String
+
+    private var lowerUnits: String {
+        units.lowercased()
+    }
+
+    private var isPercent: Bool { lowerUnits.contains("percent") }
+    private var isCurrency: Bool { lowerUnits.contains("dollar") }
+    private var isBillions: Bool { lowerUnits.contains("billion") }
+    private var isMillions: Bool { lowerUnits.contains("million") }
+    private var isThousands: Bool { lowerUnits.contains("thousand") }
+    private var isIndex: Bool { lowerUnits.contains("index") }
+
+    func formatValue(_ value: Double, compact: Bool) -> String {
+        if isPercent {
+            return String(format: "%.2f%%", value)
+        }
+
+        if isBillions {
+            return formatCurrency(value * 1_000_000_000, compact: compact)
+        }
+
+        if isMillions {
+            return formatCurrency(value * 1_000_000, compact: compact)
+        }
+
+        if isThousands {
+            return formatCurrency(value * 1_000, compact: compact)
+        }
+
+        if isCurrency {
+            return formatCurrency(value, compact: compact)
+        }
+
+        if isIndex {
+            return compact ? String(format: "%.1f", value) : String(format: "%.2f", value)
+        }
+
+        return formatDecimal(value, compact: compact)
+    }
+
+    func formatAxisValue(_ value: Double) -> String {
+        if isPercent {
+            return String(format: "%.1f%%", value)
+        }
+
+        if isCurrency || isBillions || isMillions || isThousands {
+            return formatCurrency(value, compact: true)
+        }
+
+        return formatDecimal(value, compact: true)
+    }
+
+    private func formatCurrency(_ value: Double, compact: Bool) -> String {
+        if compact || abs(value) >= 1_000_000 {
+            switch abs(value) {
+            case 1_000_000_000_000...:
+                return String(format: "$%.1fT", value / 1_000_000_000_000)
+            case 1_000_000_000...:
+                return String(format: "$%.1fB", value / 1_000_000_000)
+            case 1_000_000...:
+                return String(format: "$%.1fM", value / 1_000_000)
+            case 1_000...:
+                return String(format: "$%.1fK", value / 1_000)
+            default:
+                break
+            }
+        }
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencySymbol = "$"
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? "$\(value)"
+    }
+
+    private func formatDecimal(_ value: Double, compact: Bool) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = compact ? 1 : 2
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: compact ? "%.1f" : "%.2f", value)
+    }
+}
+
+// MARK: - Statistics
+
+struct SeriesStatistics: Equatable {
+    let count: Int
+    let min: Double
+    let max: Double
+    let mean: Double
+    let median: Double
+    let standardDeviation: Double
+    let latestValue: Double
+    let latestChange: Double
+    let latestPercentChange: Double
+    let firstValue: Double
+    let totalChange: Double
+    let annualizedChange: Double
+    let range: Double
+    let units: String
+
+    init(
+        count: Int,
+        min: Double,
+        max: Double,
+        mean: Double,
+        median: Double,
+        standardDeviation: Double,
+        latestValue: Double,
+        latestChange: Double,
+        latestPercentChange: Double,
+        firstValue: Double = 0,
+        totalChange: Double = 0,
+        annualizedChange: Double = 0,
+        range: Double? = nil,
+        units: String = ""
+    ) {
+        self.count = count
+        self.min = min
+        self.max = max
+        self.mean = mean
+        self.median = median
+        self.standardDeviation = standardDeviation
+        self.latestValue = latestValue
+        self.latestChange = latestChange
+        self.latestPercentChange = latestPercentChange
+        self.firstValue = firstValue == 0 ? min : firstValue
+        self.totalChange = totalChange == 0 ? latestValue - (firstValue == 0 ? min : firstValue) : totalChange
+        self.annualizedChange = annualizedChange
+        self.range = range ?? (max - min)
+        self.units = units
+    }
+
+    private var formatter: ValueFormatter {
+        ValueFormatter(units: units)
+    }
+
+    var formattedMin: String { formatter.formatValue(min, compact: true) }
+    var formattedMax: String { formatter.formatValue(max, compact: true) }
+    var formattedMean: String { formatter.formatValue(mean, compact: true) }
+    var formattedMedian: String { formatter.formatValue(median, compact: true) }
+    var formattedStdDev: String { formatNumber(standardDeviation) }
+    var formattedLatestValue: String { formatter.formatValue(latestValue, compact: true) }
+    var formattedRange: String { formatter.formatValue(range, compact: true) }
+    var formattedTotalChange: String { signed(formatter.formatValue(totalChange, compact: true), value: totalChange) }
+    var formattedAnnualizedChange: String { String(format: "%.2f%% / yr", annualizedChange) }
+
+    var formattedLatestChange: String {
+        signed(formatter.formatValue(latestChange, compact: true), value: latestChange)
+    }
+
+    var formattedPercentChange: String {
+        signed(String(format: "%.2f%%", abs(latestPercentChange)), value: latestPercentChange)
+    }
+
+    private func formatNumber(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+    }
+
+    private func signed(_ string: String, value: Double) -> String {
+        let unsignedString = string.hasPrefix("-") ? String(string.dropFirst()) : string
+        if value > 0 { return "+\(unsignedString)" }
+        if value < 0 { return "-\(unsignedString)" }
+        return unsignedString
+    }
+}
+
+struct SeriesInsight: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let value: String
+    let detail: String
+    let symbol: String
 }

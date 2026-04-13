@@ -1,166 +1,129 @@
 # FRED Ultra
 
-A powerful macOS application for exploring and visualizing economic data from the Federal Reserve Economic Data (FRED) service.
+FRED Ultra is a native macOS app for searching, comparing, and exporting Federal Reserve Economic Data (FRED) series. It is built with SwiftUI and Swift Charts and is designed for desktop research workflows instead of a simple single-series viewer.
 
-![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
-![Swift](https://img.shields.io/badge/Swift-5.9+-orange)
-![License](https://img.shields.io/badge/License-MIT-green)
+## What the app does
 
-## Features
-
-### Data Discovery
-- **Search** thousands of economic data series from FRED
-- **Favorites** - Save frequently accessed series for quick access
-- **Recent searches** - Quickly revisit your previous queries
-
-### Visualization
-- **Interactive Charts** - View time series data with smooth line and area charts
-- **Multi-series comparison** - Overlay multiple data series on a single chart
-- **Date range filtering** - Focus on specific time periods (1 month to all time)
-- **Hover tooltips** - See exact values by hovering over the chart
-
-### Data Analysis
-- **Statistics panel** - View key metrics including:
-  - Count, min, max, mean, median
-  - Standard deviation
-  - Latest value and change
-- **Data table** - Browse raw observation data in a sortable table format
-
-### Export & Share
-- **CSV export** - Download data in comma-separated format
-- **JSON export** - Download data in structured JSON format
-- **Copy to clipboard** - Quickly copy data for use in other applications
+- Guides first-time users through entering and validating a FRED API key.
+- Searches FRED series with debounced queries, recent searches, and favorites.
+- Opens a series dashboard with:
+  - headline metrics for the latest reading, latest change, period change, and annualized drift
+  - an interactive chart
+  - a raw observation table
+  - insight cards and series metadata
+- Supports multi-series comparison.
+  - When multiple series are loaded, comparison mode can rebase each series to `100` at the start of the selected range so series with different units can still be compared honestly.
+- Exports the current main-series observations as CSV or JSON.
+- Copies the visible observation set to the clipboard.
+- Includes lightweight unified logging for search, settings, detail loading, and export actions.
 
 ## Requirements
 
-- macOS 14.0 (Sonoma) or later
-- A free FRED API key (get one at [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html))
+- macOS 15 or later
+- Xcode 16 or later for local development
+- A free FRED API key: [FRED API key docs](https://fred.stlouisfed.org/docs/api/api_key.html)
 
-## Installation
+## Project structure
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/FRED-Ultra.git
-   ```
-
-2. Open `FRED-Ultra.xcodeproj` in Xcode
-
-3. Build and run (⌘R)
-
-4. Add your FRED API key in Settings (⌘,)
-
-## Getting a FRED API Key
-
-1. Visit [FRED API Key Registration](https://fred.stlouisfed.org/docs/api/api_key.html)
-2. Create a free account or log in
-3. Request an API key
-4. Copy the key and paste it in the app's Settings
-
-## Usage
-
-### Searching for Data
-
-1. Use the search bar in the sidebar to find economic data series
-2. Search terms can include:
-   - Economic indicators: `GDP`, `inflation`, `unemployment`
-   - Specific series IDs: `UNRATE`, `CPIAUCSL`, `DGS10`
-   - Descriptive terms: `interest rates`, `housing starts`
-
-### Viewing Data
-
-1. Click on a series in the search results to view its data
-2. Use the tab bar to switch between:
-   - **Chart** - Visual time series representation
-   - **Data** - Table of observations
-   - **Statistics** - Summary statistics
-
-### Comparing Series
-
-1. Click the "+" button in the toolbar
-2. Search for and select additional series
-3. Both series will be displayed on the same chart
-4. Remove comparison series by clicking the "x" next to them
-
-### Managing Favorites
-
-- Click the star icon to add/remove a series from favorites
-- Access favorites from the sidebar
-- Right-click for additional options
-
-### Exporting Data
-
-1. Click the export button in the toolbar
-2. Choose your format (CSV or JSON)
-3. Select a save location
-
-## Keyboard Shortcuts
-
-| Action | Shortcut |
-|--------|----------|
-| Settings | ⌘, |
-| Refresh | ⌘R |
-| Export CSV | ⇧⌘E |
-
-## Architecture
-
-The app follows the MVVM (Model-View-ViewModel) architecture:
-
-```
+```text
 FRED-Ultra/
-├── Models/
-│   └── FREDModels.swift       # Data models and types
-├── Services/
-│   └── FREDService.swift      # API client and data services
-├── ViewModels/
-│   ├── SearchViewModel.swift  # Search logic
-│   └── SeriesDetailViewModel.swift  # Detail view logic
-└── Views/
-    ├── ContentView.swift      # Main navigation
-    ├── SeriesDetailView.swift # Chart, table, stats views
-    └── SettingsView.swift     # App configuration
+├── FRED-Ultra/
+│   ├── Models/
+│   │   └── FREDModels.swift
+│   ├── Services/
+│   │   └── FREDService.swift
+│   ├── Support/
+│   │   └── AppLogger.swift
+│   ├── ViewModels/
+│   │   ├── SearchViewModel.swift
+│   │   └── SeriesDetailViewModel.swift
+│   ├── Views/
+│   │   ├── SeriesDetailView.swift
+│   │   └── SettingsView.swift
+│   ├── ContentView.swift
+│   └── FRED_UltraApp.swift
+├── FRED-UltraTests/
+├── FRED-UltraUITests/
+├── script/build_and_run.sh
+├── init.sh
+└── handoff.md
 ```
 
-## API Reference
+## Core architecture
 
-This app uses the [FRED API](https://fred.stlouisfed.org/docs/api/fred/). Key endpoints:
+- `FRED_UltraApp.swift`
+  - App entry point, command menu, settings scene, and app lifecycle logging.
+- `ContentView.swift`
+  - Root workspace. Shows onboarding when no API key is present, otherwise displays the sidebar and detail workspace.
+- `FREDModels.swift`
+  - FRED API models, chart/table presentation models, export enums, formatters, and statistics/insight types.
+- `FREDService.swift`
+  - User defaults-backed settings manager, async FRED API client, and export service.
+- `SearchViewModel.swift`
+  - Debounced search lifecycle, loading state, and recent-search persistence.
+- `SeriesDetailViewModel.swift`
+  - Observation loading, comparison/rebased chart data, statistics, insight generation, and export/copy actions.
+- `SeriesDetailView.swift`
+  - Desktop detail experience for overview, data table, and insight surfaces.
+- `SettingsView.swift`
+  - API-key validation and local data management.
 
-- `series/search` - Search for data series
-- `series/observations` - Get data points for a series
-- `series` - Get series metadata
+## Running the app
 
-## Privacy
+### Xcode
 
-- Your API key is stored locally on your device using UserDefaults
-- Search history and favorites are stored locally
-- No data is sent to third parties (only to FRED's official API)
+1. Open `FRED-Ultra.xcodeproj`.
+2. Select the `FRED-Ultra` scheme.
+3. Build and run.
 
-## Contributing
+### Terminal
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Build and launch the app:
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+```bash
+./script/build_and_run.sh
+```
 
-## License
+Verify it launches:
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+```bash
+./script/build_and_run.sh --verify
+```
 
-## Acknowledgments
+Stream app logs:
 
-- [Federal Reserve Bank of St. Louis](https://www.stlouisfed.org/) for providing the FRED API
-- Built with [SwiftUI](https://developer.apple.com/xcode/swiftui/) and [Swift Charts](https://developer.apple.com/documentation/charts)
+```bash
+./script/build_and_run.sh --logs
+```
 
-## Support
+## Verification commands
 
-If you encounter any issues or have questions:
+Build:
 
-1. Check the [Issues](https://github.com/yourusername/FRED-Ultra/issues) page
-2. Create a new issue if your problem isn't already reported
-3. Provide as much detail as possible (macOS version, error messages, steps to reproduce)
+```bash
+xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra -sdk macosx build
+```
 
----
+Run the unit tests:
 
-Made with ❤️ for economic data enthusiasts
+```bash
+xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra -sdk macosx test -only-testing:FRED-UltraTests
+```
+
+Project smoke script:
+
+```bash
+./init.sh
+```
+
+## Command shortcuts
+
+- `⌘R` refreshes the current series detail view.
+- `⇧⌘E` exports CSV from the current series detail view.
+- The `Data` menu also exposes JSON export.
+
+## Notes
+
+- Favorites, recent searches, and the API key are stored locally on the Mac using `UserDefaults`.
+- The app talks only to the official FRED API.
+- GitHub remote configuration is not bundled in the repository. If you want to push the project, add a remote and authenticate normally for your environment.

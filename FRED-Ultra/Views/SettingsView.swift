@@ -1,138 +1,96 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var settings = SettingsManager.shared
-    @State private var showingAPIKeyHelp = false
-    @State private var testingAPIKey = false
-    @State private var apiKeyTestResult: APIKeyTestResult?
-    
+    @ObservedObject private var settings = SettingsManager.shared
+    @State private var draftAPIKey = SettingsManager.shared.apiKey
+    @State private var isTestingAPIKey = false
+    @State private var validationResult: APIKeyValidationResult?
+
     var body: some View {
         Form {
             Section {
-                HStack {
-                    SecureField("FRED API Key", text: $settings.apiKey)
+                HStack(alignment: .top, spacing: 12) {
+                    SecureField("FRED API Key", text: $draftAPIKey)
                         .textFieldStyle(.roundedBorder)
-                    
-                    Button(action: testAPIKey) {
-                        if testingAPIKey {
+
+                    Button(action: validateAndSave) {
+                        if isTestingAPIKey {
                             ProgressView()
-                                .scaleEffect(0.7)
+                                .controlSize(.small)
                         } else {
-                            Text("Test")
+                            Text("Validate")
                         }
                     }
-                    .disabled(settings.apiKey.isEmpty || testingAPIKey)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTestingAPIKey)
                 }
-                
-                if let result = apiKeyTestResult {
-                    HStack {
-                        Image(systemName: result.isValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(result.isValid ? .green : .red)
-                        Text(result.message)
-                            .font(.caption)
-                            .foregroundStyle(result.isValid ? .green : .red)
-                    }
+
+                if let validationResult {
+                    Label(validationResult.message, systemImage: validationResult.isValid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(validationResult.isValid ? .green : .red)
                 }
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("You need a free API key from FRED to use this app.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    Link(destination: URL(string: "https://fred.stlouisfed.org/docs/api/api_key.html")!) {
-                        Label("Get a Free API Key", systemImage: "key")
-                    }
-                }
+
+                Link("Get a free FRED API key", destination: URL(string: "https://fred.stlouisfed.org/docs/api/api_key.html")!)
+                    .font(.callout)
             } header: {
-                Text("API Configuration")
+                Text("FRED API")
             } footer: {
-                Text("Your API key is stored securely on your device.")
+                Text("The API key is stored locally in UserDefaults on this Mac. It is only used to make requests to the official FRED API.")
             }
-            
-            Section("Data") {
-                HStack {
-                    Text("Favorites")
-                    Spacer()
-                    Text("\(settings.favorites.count)")
-                        .foregroundStyle(.secondary)
-                }
-                
-                HStack {
-                    Text("Recent Searches")
-                    Spacer()
-                    Text("\(settings.recentSearches.count)")
-                        .foregroundStyle(.secondary)
-                }
-                
+
+            Section("Workspace Data") {
+                LabeledContent("Favorites", value: "\(settings.favorites.count)")
+                LabeledContent("Recent Searches", value: "\(settings.recentSearches.count)")
+
                 if !settings.recentSearches.isEmpty {
-                    Button("Clear Recent Searches") {
+                    Button("Clear Recent Searches", role: .destructive) {
                         settings.clearRecentSearches()
                     }
                 }
             }
 
-            Section("About") {
-                HStack {
-                    Text("Version")
-                    Spacer()
-                    Text("1.0.0")
-                        .foregroundStyle(.secondary)
-                }
-                
-                Link(destination: URL(string: "https://fred.stlouisfed.org")!) {
-                    Label("FRED Website", systemImage: "globe")
-                }
-                
-                Link(destination: URL(string: "https://fred.stlouisfed.org/docs/api/fred/")!) {
-                    Label("API Documentation", systemImage: "book")
-                }
+            Section("Help & References") {
+                Link("FRED Website", destination: URL(string: "https://fred.stlouisfed.org")!)
+                Link("FRED API Documentation", destination: URL(string: "https://fred.stlouisfed.org/docs/api/fred/")!)
+                Link("Federal Reserve Data Terms of Use", destination: URL(string: "https://fred.stlouisfed.org/legal/")!)
             }
-            
-            Section("Acknowledgments") {
-                Text("This app uses data from the Federal Reserve Economic Data (FRED) service provided by the Federal Reserve Bank of St. Louis.")
-                    .font(.caption)
+
+            Section("About") {
+                LabeledContent("App Version", value: "1.0")
+                Text("FRED Ultra is a desktop research tool for searching, comparing, and exporting Federal Reserve economic time-series data.")
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
-        .frame(minWidth: 400, minHeight: 350)
+        .frame(minWidth: 460, minHeight: 420)
     }
-    
-    private func testAPIKey() {
-        testingAPIKey = true
-        apiKeyTestResult = nil
-        
+
+    private func validateAndSave() {
+        isTestingAPIKey = true
+        validationResult = nil
+
         Task {
             do {
-                // Try a simple search to test the API key
-                _ = try await FREDService.shared.searchSeries(query: "GDP", limit: 1)
-                await MainActor.run {
-                    apiKeyTestResult = APIKeyTestResult(isValid: true, message: "API key is valid!")
-                    testingAPIKey = false
-                }
-            } catch FREDError.missingAPIKey {
-                await MainActor.run {
-                    apiKeyTestResult = APIKeyTestResult(isValid: false, message: "Please enter an API key")
-                    testingAPIKey = false
-                }
+                try await FREDService.shared.validateAPIKey(draftAPIKey)
+                settings.updateAPIKey(draftAPIKey)
+                validationResult = APIKeyValidationResult(isValid: true, message: "API key validated and saved.")
+                AppLogger.settings.info("Validated API key from Settings")
             } catch {
-                await MainActor.run {
-                    apiKeyTestResult = APIKeyTestResult(isValid: false, message: error.localizedDescription)
-                    testingAPIKey = false
-                }
+                validationResult = APIKeyValidationResult(isValid: false, message: error.localizedDescription)
+                AppLogger.settings.error("Settings validation failed: \(error.localizedDescription, privacy: .public)")
             }
+
+            isTestingAPIKey = false
         }
     }
 }
 
-struct APIKeyTestResult {
+private struct APIKeyValidationResult {
     let isValid: Bool
     let message: String
 }
 
 #Preview {
-    NavigationStack {
-        SettingsView()
-    }
+    SettingsView()
 }
