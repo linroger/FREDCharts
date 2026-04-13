@@ -8,105 +8,161 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var settings = SettingsManager.shared
+    @StateObject private var searchVM = SearchViewModel()
     @State private var selectedSeries: FREDSeries?
-    @State private var selectedFavorite: FavoriteSeries?
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
-    @State private var sidebarSelection: SidebarItem? = .search
-    @ObservedObject private var settings = SettingsManager.shared
+    @State private var columnVisibility = NavigationSplitViewVisibility.doubleColumn
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            // Primary sidebar with sections
-            List(selection: $sidebarSelection) {
-                Section {
-                    Label("Search", systemImage: "magnifyingglass")
-                        .tag(SidebarItem.search)
-                }
-                
-                Section("Favorites") {
-                    if settings.favorites.isEmpty {
-                        Text("No favorites yet")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    } else {
-                        ForEach(settings.favorites) { favorite in
-                            Label(favorite.title, systemImage: "star.fill")
-                                .tag(SidebarItem.favorite(favorite))
-                                .lineLimit(1)
-                                .contextMenu {
-                                    Button(role: .destructive) {
-                                        settings.removeFavorite(favorite)
-                                    } label: {
-                                        Label("Remove from Favorites", systemImage: "star.slash")
-                                    }
-                                }
-                        }
-                    }
-                }
-                
-                if !settings.recentSearches.isEmpty {
-                    Section("Recent Searches") {
-                        ForEach(settings.recentSearches, id: \.self) { search in
-                            Label(search, systemImage: "clock")
-                                .tag(SidebarItem.recentSearch(search))
-                                .lineLimit(1)
-                        }
-                        
-                        Button(action: { settings.clearRecentSearches() }) {
-                            Label("Clear Recent", systemImage: "trash")
-                                .foregroundStyle(.red)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-            .navigationTitle("FRED Ultra")
-            .frame(minWidth: 200)
-        } content: {
-            // Content column - search results or favorite details
-            switch sidebarSelection {
-            case .search, .recentSearch:
-                SearchContentView(
-                    selectedSeries: $selectedSeries,
-                    initialQuery: sidebarSelection?.searchQuery
-                )
-            case .favorite(let favorite):
-                FavoriteContentView(
-                    favorite: favorite,
-                    selectedSeries: $selectedSeries
-                )
-            case nil:
-                ContentUnavailableView(
-                    "Select an Item",
-                    systemImage: "sidebar.left",
-                    description: Text("Choose an item from the sidebar.")
-                )
-            }
-        } detail: {
-            // Detail column - series visualization
-            if let series = selectedSeries {
-                SeriesDetailView(series: series)
+        Group {
+            if !settings.hasValidAPIKey {
+                WelcomeView()
             } else {
-                ContentUnavailableView(
-                    "Select a Series",
-                    systemImage: "chart.xyaxis.line",
-                    description: Text("Search and select a data series to visualize.")
-                )
-            }
-        }
-        .onChange(of: sidebarSelection) { _, newValue in
-            // Clear selection when switching sidebar items
-            if case .favorite(let fav) = newValue {
-                // Load the favorite series
-                Task {
-                    await loadFavoriteSeries(fav)
-                }
+                mainContentView
             }
         }
     }
     
-    private func loadFavoriteSeries(_ favorite: FavoriteSeries) async {
+    private var mainContentView: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            sidebarView
+        } detail: {
+            detailView
+        }
+    }
+    
+    private var sidebarView: some View {
+        VStack(spacing: 0) {
+            // Search results
+            List(selection: $selectedSeries) {
+                if searchVM.isLoading {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Searching...")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                } else if let error = searchVM.errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.largeTitle)
+                            .foregroundStyle(.orange)
+                        Text(error)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .font(.callout)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                } else if searchVM.results.isEmpty && searchVM.hasSearched {
+                    ContentUnavailableView.search(text: searchVM.query)
+                } else if searchVM.results.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.secondary)
+                        Text("Search Economic Data")
+                            .font(.headline)
+                        Text("Enter a search term above to find FRED data series.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Try searching for:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ForEach(["GDP", "Unemployment Rate", "Inflation", "Interest Rates"], id: \.self) { term in
+                                Button(action: { searchVM.query = term }) {
+                                    HStack {
+                                        Image(systemName: "magnifyingglass")
+                                            .font(.caption)
+                                        Text(term)
+                                    }
+                                    .foregroundStyle(.blue)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                } else {
+                    Section("Results (\(searchVM.results.count))") {
+                        ForEach(searchVM.results) { series in
+                            SeriesRowView(series: series)
+                                .tag(series)
+                        }
+                    }
+                }
+                
+                // Favorites section
+                if !settings.favorites.isEmpty {
+                    Section("Favorites") {
+                        ForEach(settings.favorites) { favorite in
+                            Button(action: {
+                                Task {
+                                    await loadFavorite(favorite)
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "star.fill")
+                                        .foregroundStyle(.yellow)
+                                    VStack(alignment: .leading) {
+                                        Text(favorite.title)
+                                            .lineLimit(1)
+                                        Text(favorite.id)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    settings.removeFavorite(favorite)
+                                } label: {
+                                    Label("Remove from Favorites", systemImage: "star.slash")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $searchVM.query, prompt: "Search FRED data...")
+        }
+        .navigationTitle("FRED Ultra")
+        .frame(minWidth: 300)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: {
+                    Task { await searchVM.refresh() }
+                }) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(searchVM.query.isEmpty || searchVM.isLoading)
+            }
+        }
+    }
+    
+    private var detailView: some View {
+        Group {
+            if let series = selectedSeries {
+                SeriesDetailView(series: series)
+            } else {
+                ContentUnavailableView(
+                    "Select a Data Series",
+                    systemImage: "chart.xyaxis.line",
+                    description: Text("Search for economic data and select a series to view charts and statistics.")
+                )
+            }
+        }
+    }
+    
+    private func loadFavorite(_ favorite: FavoriteSeries) async {
         do {
             let series = try await FREDService.shared.getSeriesInfo(seriesId: favorite.id)
             await MainActor.run {
@@ -118,143 +174,116 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Sidebar Item
+// MARK: - Welcome View (API Key Setup)
 
-enum SidebarItem: Hashable {
-    case search
-    case favorite(FavoriteSeries)
-    case recentSearch(String)
-    
-    var searchQuery: String? {
-        switch self {
-        case .recentSearch(let query):
-            return query
-        default:
-            return nil
-        }
-    }
-}
-
-// MARK: - Search Content View
-
-struct SearchContentView: View {
-    @Binding var selectedSeries: FREDSeries?
-    let initialQuery: String?
-    @StateObject private var searchVM = SearchViewModel()
+struct WelcomeView: View {
+    @StateObject private var settings = SettingsManager.shared
+    @State private var apiKeyInput = ""
+    @State private var isTestingKey = false
+    @State private var testResult: (success: Bool, message: String)?
     
     var body: some View {
-        List(selection: $selectedSeries) {
-            if searchVM.isLoading {
+        VStack(spacing: 24) {
+            Spacer()
+            
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 64))
+                .foregroundStyle(.blue)
+            
+            Text("Welcome to FRED Ultra")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            
+            Text("Explore economic data from the Federal Reserve")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            
+            VStack(alignment: .leading, spacing: 16) {
+                Text("To get started, enter your FRED API key:")
+                    .font(.headline)
+                
                 HStack {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                    Text("Searching...")
-                        .foregroundStyle(.secondary)
+                    SecureField("Enter your API key", text: $apiKeyInput)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 400)
+                    
+                    Button(action: testAPIKey) {
+                        if isTestingKey {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Text("Test & Save")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(apiKeyInput.isEmpty || isTestingKey)
                 }
-                .frame(maxWidth: .infinity)
-                .padding()
-            } else if let error = searchVM.errorMessage {
-                VStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.title)
-                        .foregroundStyle(.orange)
-                    Text(error)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                
+                if let result = testResult {
+                    HStack {
+                        Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        Text(result.message)
+                    }
+                    .foregroundStyle(result.success ? .green : .red)
+                    .font(.callout)
                 }
-                .frame(maxWidth: .infinity)
-                .padding()
-            } else if searchVM.results.isEmpty && searchVM.hasSearched {
-                ContentUnavailableView.search(text: searchVM.query)
-            } else if searchVM.results.isEmpty {
-                ContentUnavailableView(
-                    "Search Economic Data",
-                    systemImage: "magnifyingglass",
-                    description: Text("Enter a search term to find FRED data series.\n\nExamples: GDP, unemployment, inflation, interest rates")
-                )
-            } else {
-                Section("Results (\(searchVM.results.count))") {
-                    ForEach(searchVM.results) { series in
-                        SeriesRowView(series: series)
-                            .tag(series)
+                
+                Divider()
+                    .padding(.vertical, 8)
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Don't have an API key?")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    Text("Get a free API key from the FRED website:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Link(destination: URL(string: "https://fred.stlouisfed.org/docs/api/api_key.html")!) {
+                        HStack {
+                            Image(systemName: "link")
+                            Text("Get Free API Key")
+                        }
                     }
                 }
             }
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: 500)
+            
+            Spacer()
         }
-        .searchable(text: $searchVM.query, prompt: "Search economic data...")
-        .navigationTitle("Search")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: {
-                    Task { await searchVM.refresh() }
-                }) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .disabled(searchVM.query.isEmpty || searchVM.isLoading)
-            }
-        }
-        .onAppear {
-            if let query = initialQuery, searchVM.query.isEmpty {
-                searchVM.query = query
-            }
-        }
-    }
-}
-
-// MARK: - Favorite Content View
-
-struct FavoriteContentView: View {
-    let favorite: FavoriteSeries
-    @Binding var selectedSeries: FREDSeries?
-    @State private var isLoading = true
-    @State private var error: String?
-    @State private var series: FREDSeries?
-    
-    var body: some View {
-        Group {
-            if isLoading {
-                VStack {
-                    ProgressView()
-                    Text("Loading \(favorite.title)...")
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = error {
-                ContentUnavailableView {
-                    Label("Error", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(error)
-                } actions: {
-                    Button("Retry") {
-                        Task { await loadSeries() }
-                    }
-                }
-            } else if let series = series {
-                List(selection: $selectedSeries) {
-                    SeriesRowView(series: series)
-                        .tag(series)
-                }
-            }
-        }
-        .navigationTitle(favorite.title)
-        .task {
-            await loadSeries()
-        }
+        .padding()
+        .frame(minWidth: 600, minHeight: 500)
     }
     
-    private func loadSeries() async {
-        isLoading = true
-        error = nil
+    private func testAPIKey() {
+        isTestingKey = true
+        testResult = nil
         
-        do {
-            let loadedSeries = try await FREDService.shared.getSeriesInfo(seriesId: favorite.id)
-            series = loadedSeries
-            selectedSeries = loadedSeries
-        } catch {
-            self.error = error.localizedDescription
+        // Temporarily set the API key
+        let originalKey = settings.apiKey
+        settings.apiKey = apiKeyInput
+        
+        Task {
+            do {
+                // Test with a simple search
+                _ = try await FREDService.shared.searchSeries(query: "GDP", limit: 1)
+                await MainActor.run {
+                    testResult = (true, "API key is valid! Starting app...")
+                    isTestingKey = false
+                    // Key is already saved, app will transition
+                }
+            } catch {
+                await MainActor.run {
+                    settings.apiKey = originalKey // Restore original
+                    testResult = (false, error.localizedDescription)
+                    isTestingKey = false
+                }
+            }
         }
-        
-        isLoading = false
     }
 }
 
@@ -271,6 +300,8 @@ struct SeriesRowView: View {
                     .font(.headline)
                     .lineLimit(2)
                 
+                Spacer()
+                
                 if settings.isFavorite(series) {
                     Image(systemName: "star.fill")
                         .foregroundStyle(.yellow)
@@ -281,6 +312,7 @@ struct SeriesRowView: View {
             HStack {
                 Text(series.id)
                     .font(.caption)
+                    .fontWeight(.medium)
                     .foregroundStyle(.blue)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -294,20 +326,12 @@ struct SeriesRowView: View {
                     .foregroundStyle(.secondary)
             }
             
-            HStack {
-                Text(series.units)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                
-                Spacer()
-                
-                Text(series.formattedDateRange)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            Text(series.units)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
         .contextMenu {
             Button {

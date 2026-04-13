@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		1687339FF81A60740948241B /* SeriesDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */; };
 		195B8CF786C74E0C8554CC43 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCD749E3987031BF560B67F /* SettingsView.swift */; };
+		2DF1EE0A5CBC3DFB910419E8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF17CE1C07FC96D80E8EB747 /* ContentView.swift */; };
 		331409BA120C668A79A08C5A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF17CE1C07FC96D80E8EB747 /* ContentView.swift */; };
 		687373B2789B1CD40E6E136C /* SeriesDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */; };
 		A7F07C362F8D749F00B51F21 /* handoff.md in Resources */ = {isa = PBXBuildFile; fileRef = A7F07C352F8D749F00B51F21 /* handoff.md */; };
@@ -41,6 +42,7 @@
 		153AA69790567BE8C94B3F66 /* SearchViewModel.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SearchViewModel.swift; path = "FRED-Ultra/ViewModels/SearchViewModel.swift"; sourceTree = SOURCE_ROOT; };
 		15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SeriesDetailViewModel.swift; path = "FRED-Ultra/ViewModels/SeriesDetailViewModel.swift"; sourceTree = SOURCE_ROOT; };
 		20889E0FE5C1DA70C4A2C825 /* FREDService.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = FREDService.swift; path = "FRED-Ultra/Services/FREDService.swift"; sourceTree = SOURCE_ROOT; };
+		2BF345E7FC73F2C11FBB24BC /* FRED_Ultra.entitlements */ = {isa = PBXFileReference; explicitFileType = text.plist.entitlements; lastKnownFileType = text.plist.entitlements; name = FRED_Ultra.entitlements; path = "FRED-Ultra/FRED_Ultra.entitlements"; sourceTree = SOURCE_ROOT; };
 		33949326543BA86B1802A44A /* FRED_UltraTests.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = FRED_UltraTests.swift; path = "FRED-UltraTests/FRED_UltraTests.swift"; sourceTree = SOURCE_ROOT; };
 		54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SeriesDetailView.swift; path = "FRED-Ultra/Views/SeriesDetailView.swift"; sourceTree = SOURCE_ROOT; };
 		666FB79E8C864D7F96DEF91D /* FREDModels.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = FREDModels.swift; path = "FRED-Ultra/Models/FREDModels.swift"; sourceTree = SOURCE_ROOT; };
@@ -115,6 +117,7 @@
 				D5C629F4636227D8DFFEA0D5 /* FRED_UltraApp.swift */,
 				33949326543BA86B1802A44A /* FRED_UltraTests.swift */,
 				A7F07D572F8D762900B51F21 /* README.md */,
+				2BF345E7FC73F2C11FBB24BC /* FRED_Ultra.entitlements */,
 			);
 			sourceTree = "<group>";
 		};
@@ -276,6 +279,7 @@
 			files = (
 				F3AC560304B8B2346A162F43 /* SearchViewModel.swift in Sources */,
 				687373B2789B1CD40E6E136C /* SeriesDetailView.swift in Sources */,
+				2DF1EE0A5CBC3DFB910419E8 /* ContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
