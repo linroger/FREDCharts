@@ -11,6 +11,7 @@ class SeriesDetailViewModel: ObservableObject {
     @Published var selectedDateRange: DateRangeOption = .fiveYears
     @Published var selectedObservation: ChartDataPoint?
     @Published var chartDataPoints: [ChartDataPoint] = []
+    @Published var unitsWarning: String?
     
     // Statistics
     @Published var statistics: SeriesStatistics?
@@ -32,7 +33,12 @@ class SeriesDetailViewModel: ObservableObject {
     }
     
     var tableRows: [ObservationRow] {
-        filteredObservations.reversed().map { ObservationRow(observation: $0) }
+        filteredObservations.reversed().map { ObservationRow(observation: $0, units: mainSeries.units) }
+    }
+    
+    // Unit-aware value formatter for the main series
+    var valueFormatter: ValueFormatter {
+        ValueFormatter(units: mainSeries.units)
     }
 
     func loadData() async {
@@ -49,6 +55,7 @@ class SeriesDetailViewModel: ObservableObject {
             self.seriesData = data
             updateChartDataPoints()
             calculateStatistics()
+            checkUnitsCompatibility()
         } catch {
             self.errorMessage = error.localizedDescription
         }
@@ -58,6 +65,24 @@ class SeriesDetailViewModel: ObservableObject {
     
     func refreshData() async {
         await loadData()
+    }
+    
+    private func checkUnitsCompatibility() {
+        guard additionalSeries.count > 0 else {
+            unitsWarning = nil
+            return
+        }
+        
+        let mainUnits = mainSeries.units.lowercased()
+        let incompatible = additionalSeries.filter { 
+            $0.units.lowercased() != mainUnits 
+        }
+        
+        if !incompatible.isEmpty {
+            unitsWarning = "Warning: Series have different units and may not be directly comparable."
+        } else {
+            unitsWarning = nil
+        }
     }
     
     private func updateChartDataPoints() {
@@ -123,7 +148,8 @@ class SeriesDetailViewModel: ObservableObject {
             standardDeviation: stdDev,
             latestValue: latestValue,
             latestChange: change,
-            latestPercentChange: percentChange
+            latestPercentChange: percentChange,
+            units: mainSeries.units
         )
     }
 
@@ -140,6 +166,7 @@ class SeriesDetailViewModel: ObservableObject {
         additionalSeries.removeAll { $0.id == series.id }
         seriesData.removeValue(forKey: series.id)
         updateChartDataPoints()
+        checkUnitsCompatibility()
     }
     
     func updateDateRange(_ range: DateRangeOption) {
@@ -178,6 +205,134 @@ class SeriesDetailViewModel: ObservableObject {
     }
 }
 
+// MARK: - Value Formatter (Unit-Aware)
+
+struct ValueFormatter {
+    let units: String
+    
+    private var isBillions: Bool {
+        units.lowercased().contains("billion")
+    }
+    
+    private var isMillions: Bool {
+        units.lowercased().contains("million")
+    }
+    
+    private var isPercent: Bool {
+        units.lowercased().contains("percent")
+    }
+    
+    private var isDollars: Bool {
+        units.lowercased().contains("dollar")
+    }
+    
+    private var isIndex: Bool {
+        units.lowercased().contains("index")
+    }
+    
+    /// Format a raw value from the API with full context
+    func formatValue(_ value: Double, compact: Bool = false) -> String {
+        if isPercent {
+            return String(format: "%.2f%%", value)
+        }
+        
+        if isBillions {
+            // Value is already in billions, convert to human-readable
+            return formatCurrency(value * 1_000_000_000, compact: compact)
+        }
+        
+        if isMillions {
+            // Value is already in millions
+            return formatCurrency(value * 1_000_000, compact: compact)
+        }
+        
+        if isDollars {
+            return formatCurrency(value, compact: compact)
+        }
+        
+        if isIndex {
+            return String(format: "%.1f", value)
+        }
+        
+        // Default formatting
+        return formatDecimal(value)
+    }
+    
+    /// Format for chart Y-axis labels
+    func formatAxisValue(_ value: Double) -> String {
+        if isPercent {
+            return String(format: "%.1f%%", value)
+        }
+        
+        if isBillions {
+            // Value on axis is already multiplied, so divide back
+            let actualValue = value
+            if actualValue >= 1_000 {
+                return "$\(formatCompact(actualValue / 1_000))T"
+            } else {
+                return "$\(formatCompact(actualValue))B"
+            }
+        }
+        
+        if isMillions {
+            let actualValue = value
+            if actualValue >= 1_000 {
+                return "$\(formatCompact(actualValue / 1_000))B"
+            } else {
+                return "$\(formatCompact(actualValue))M"
+            }
+        }
+        
+        if isDollars {
+            return formatCurrency(value, compact: true)
+        }
+        
+        return formatCompact(value)
+    }
+    
+    private func formatCurrency(_ value: Double, compact: Bool) -> String {
+        if compact {
+            if abs(value) >= 1_000_000_000_000 {
+                return String(format: "$%.1fT", value / 1_000_000_000_000)
+            } else if abs(value) >= 1_000_000_000 {
+                return String(format: "$%.1fB", value / 1_000_000_000)
+            } else if abs(value) >= 1_000_000 {
+                return String(format: "$%.1fM", value / 1_000_000)
+            } else if abs(value) >= 1_000 {
+                return String(format: "$%.1fK", value / 1_000)
+            }
+        }
+        
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencySymbol = "$"
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? "$\(value)"
+    }
+    
+    private func formatDecimal(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+    }
+    
+    private func formatCompact(_ value: Double) -> String {
+        if abs(value) >= 1_000_000_000_000 {
+            return String(format: "%.1fT", value / 1_000_000_000_000)
+        } else if abs(value) >= 1_000_000_000 {
+            return String(format: "%.1fB", value / 1_000_000_000)
+        } else if abs(value) >= 1_000_000 {
+            return String(format: "%.1fM", value / 1_000_000)
+        } else if abs(value) >= 1_000 {
+            return String(format: "%.1fK", value / 1_000)
+        } else {
+            return String(format: "%.1f", value)
+        }
+    }
+}
+
 // MARK: - Statistics Model
 struct SeriesStatistics {
     let count: Int
@@ -189,16 +344,21 @@ struct SeriesStatistics {
     let latestValue: Double
     let latestChange: Double
     let latestPercentChange: Double
+    let units: String
     
-    var formattedMin: String { formatNumber(min) }
-    var formattedMax: String { formatNumber(max) }
-    var formattedMean: String { formatNumber(mean) }
-    var formattedMedian: String { formatNumber(median) }
+    private var formatter: ValueFormatter {
+        ValueFormatter(units: units)
+    }
+    
+    var formattedMin: String { formatter.formatValue(min, compact: true) }
+    var formattedMax: String { formatter.formatValue(max, compact: true) }
+    var formattedMean: String { formatter.formatValue(mean, compact: true) }
+    var formattedMedian: String { formatter.formatValue(median, compact: true) }
     var formattedStdDev: String { formatNumber(standardDeviation) }
-    var formattedLatestValue: String { formatNumber(latestValue) }
+    var formattedLatestValue: String { formatter.formatValue(latestValue, compact: true) }
     var formattedLatestChange: String {
         let sign = latestChange >= 0 ? "+" : ""
-        return "\(sign)\(formatNumber(latestChange))"
+        return "\(sign)\(formatter.formatValue(latestChange, compact: true))"
     }
     var formattedPercentChange: String {
         let sign = latestPercentChange >= 0 ? "+" : ""

@@ -9,9 +9,13 @@
 /* Begin PBXBuildFile section */
 		1687339FF81A60740948241B /* SeriesDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */; };
 		195B8CF786C74E0C8554CC43 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCD749E3987031BF560B67F /* SettingsView.swift */; };
+		257E056FFE225DABC998ED6F /* SeriesDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */; };
+		2A016F45159E4EC5F0D240A9 /* SeriesDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */; };
 		2DF1EE0A5CBC3DFB910419E8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF17CE1C07FC96D80E8EB747 /* ContentView.swift */; };
 		331409BA120C668A79A08C5A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF17CE1C07FC96D80E8EB747 /* ContentView.swift */; };
 		687373B2789B1CD40E6E136C /* SeriesDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */; };
+		8822F1E3F6EBAB9BCE0A74E3 /* FREDModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666FB79E8C864D7F96DEF91D /* FREDModels.swift */; };
+		94FE473B4105778869B76E6C /* SeriesDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */; };
 		A7F07C362F8D749F00B51F21 /* handoff.md in Resources */ = {isa = PBXBuildFile; fileRef = A7F07C352F8D749F00B51F21 /* handoff.md */; };
 		A7F07D582F8D762900B51F21 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = A7F07D572F8D762900B51F21 /* README.md */; };
 		AFB8A5B2F8E833E2C4F9EE57 /* FRED_UltraApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5C629F4636227D8DFFEA0D5 /* FRED_UltraApp.swift */; };
@@ -280,6 +284,7 @@
 				F3AC560304B8B2346A162F43 /* SearchViewModel.swift in Sources */,
 				687373B2789B1CD40E6E136C /* SeriesDetailView.swift in Sources */,
 				2DF1EE0A5CBC3DFB910419E8 /* ContentView.swift in Sources */,
+				8822F1E3F6EBAB9BCE0A74E3 /* FREDModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -292,6 +297,7 @@
 				195B8CF786C74E0C8554CC43 /* SettingsView.swift in Sources */,
 				AFB8A5B2F8E833E2C4F9EE57 /* FRED_UltraApp.swift in Sources */,
 				B58878B54F24AF4ABF81D535 /* FRED_UltraTests.swift in Sources */,
+				257E056FFE225DABC998ED6F /* SeriesDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -301,6 +307,8 @@
 			files = (
 				EAD1E3537697A5AF41388FED /* FREDService.swift in Sources */,
 				1687339FF81A60740948241B /* SeriesDetailViewModel.swift in Sources */,
+				94FE473B4105778869B76E6C /* SeriesDetailViewModel.swift in Sources */,
+				2A016F45159E4EC5F0D240A9 /* SeriesDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

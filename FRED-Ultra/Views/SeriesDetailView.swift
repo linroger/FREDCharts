@@ -5,7 +5,6 @@ struct SeriesDetailView: View {
     @StateObject var viewModel: SeriesDetailViewModel
     @State private var showingAddSeriesSheet = false
     @State private var selectedTab = 0
-    @State private var showingExportMenu = false
     @ObservedObject private var settings = SettingsManager.shared
 
     init(series: FREDSeries) {
@@ -25,21 +24,30 @@ struct SeriesDetailView: View {
                 errorView(error)
             } else {
                 // Tab picker
-                Picker("View", selection: $selectedTab) {
+                Picker("", selection: $selectedTab) {
                     Text("Chart").tag(0)
                     Text("Data").tag(1)
                     Text("Statistics").tag(2)
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
                 .padding(.horizontal)
                 .padding(.vertical, 8)
+                .frame(maxWidth: 300)
 
-                TabView(selection: $selectedTab) {
-                    chartView.tag(0)
-                    tableView.tag(1)
-                    statisticsView.tag(2)
+                // Content based on selected tab
+                Group {
+                    switch selectedTab {
+                    case 0:
+                        chartView
+                    case 1:
+                        tableView
+                    case 2:
+                        statisticsView
+                    default:
+                        chartView
+                    }
                 }
-                .tabViewStyle(.automatic)
             }
         }
         .navigationTitle(viewModel.mainSeries.title)
@@ -138,6 +146,18 @@ struct SeriesDetailView: View {
                 .onChange(of: viewModel.selectedDateRange) { _, newValue in
                     viewModel.updateDateRange(newValue)
                 }
+            }
+            
+            // Units warning for multi-series
+            if let warning = viewModel.unitsWarning {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.vertical, 4)
             }
             
             // Latest value indicator
@@ -247,7 +267,7 @@ struct SeriesDetailView: View {
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: .automatic) { value in
+                    AxisMarks(values: .automatic) { _ in
                         AxisGridLine()
                         AxisValueLabel(format: .dateTime.year().month(.abbreviated))
                     }
@@ -255,7 +275,11 @@ struct SeriesDetailView: View {
                 .chartYAxis {
                     AxisMarks(position: .leading) { value in
                         AxisGridLine()
-                        AxisValueLabel()
+                        AxisValueLabel {
+                            if let doubleValue = value.as(Double.self) {
+                                Text(viewModel.valueFormatter.formatAxisValue(doubleValue))
+                            }
+                        }
                     }
                 }
                 .chartLegend(position: .bottom, spacing: 16)
@@ -291,7 +315,7 @@ struct SeriesDetailView: View {
                         Text(selected.date, style: .date)
                             .fontWeight(.medium)
                         Spacer()
-                        Text(String(format: "%.2f", selected.value))
+                        Text(viewModel.valueFormatter.formatValue(selected.value, compact: false))
                             .fontWeight(.semibold)
                     }
                     .padding(.horizontal)
@@ -363,14 +387,14 @@ struct SeriesDetailView: View {
                 }
                 .width(min: 100, ideal: 150)
                 
-                TableColumn("Value") { row in
+                TableColumn("Value (\(viewModel.mainSeries.units))") { row in
                     HStack {
                         Spacer()
                         Text(row.formattedValue)
                             .font(.system(.body, design: .monospaced))
                     }
                 }
-                .width(min: 80, ideal: 120)
+                .width(min: 120, ideal: 180)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: true))
         } else {
@@ -465,6 +489,8 @@ struct StatCard: View {
             Text(value)
                 .font(.title3)
                 .fontWeight(.semibold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()

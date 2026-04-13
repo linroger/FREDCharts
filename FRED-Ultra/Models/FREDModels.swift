@@ -173,15 +173,63 @@ struct ObservationRow: Identifiable {
     let numericValue: Double?
     let formattedDate: String
     let formattedValue: String
+    let units: String
     
-    init(observation: FREDObservation) {
+    init(observation: FREDObservation, units: String = "") {
         self.id = observation.id
         self.date = observation.date
         self.dateObject = observation.dateObject
         self.value = observation.value
         self.numericValue = observation.doubleValue
         self.formattedDate = observation.formattedDate
-        self.formattedValue = observation.formattedValue
+        self.units = units
+        
+        // Unit-aware formatting
+        if let numValue = observation.doubleValue {
+            self.formattedValue = ObservationRow.formatValue(numValue, units: units)
+        } else {
+            self.formattedValue = observation.value
+        }
+    }
+    
+    private static func formatValue(_ value: Double, units: String) -> String {
+        let lowerUnits = units.lowercased()
+        
+        if lowerUnits.contains("percent") {
+            return String(format: "%.2f%%", value)
+        }
+        
+        if lowerUnits.contains("billion") && lowerUnits.contains("dollar") {
+            // Value is in billions, display as trillions/billions
+            if value >= 1000 {
+                return String(format: "$%.2fT", value / 1000)
+            } else {
+                return String(format: "$%.2fB", value)
+            }
+        }
+        
+        if lowerUnits.contains("million") && lowerUnits.contains("dollar") {
+            if value >= 1000 {
+                return String(format: "$%.2fB", value / 1000)
+            } else {
+                return String(format: "$%.2fM", value)
+            }
+        }
+        
+        if lowerUnits.contains("dollar") {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .currency
+            formatter.currencySymbol = "$"
+            formatter.maximumFractionDigits = 2
+            return formatter.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
+        }
+        
+        // Default decimal formatting
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
     }
 }
 
