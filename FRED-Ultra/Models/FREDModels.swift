@@ -311,60 +311,200 @@ enum ExportFormat: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Unit Parsing
+
+enum UnitFamily: String, Equatable {
+    case currency
+    case percent
+    case index
+    case persons
+    case generic
+}
+
+enum CurrencyBasis: Equatable {
+    case nominal
+    case chained(year: Int?)
+    case real(year: Int?)
+}
+
+struct UnitDescriptor: Equatable {
+    let rawUnits: String
+    let family: UnitFamily
+    let scale: Double
+    let canonicalUnits: String
+    let currencyBasis: CurrencyBasis?
+
+    init(units: String) {
+        rawUnits = units
+
+        let normalized = Self.normalize(units)
+        scale = Self.parseScale(from: normalized)
+
+        if normalized.contains("percent") {
+            family = .percent
+            canonicalUnits = "Percent"
+            currencyBasis = nil
+            return
+        }
+
+        if normalized.contains("index") {
+            family = .index
+            canonicalUnits = "Index"
+            currencyBasis = nil
+            return
+        }
+
+        if normalized.contains("person") || normalized.contains("persons") || normalized.contains("people") || normalized.contains("employee") {
+            family = .persons
+            canonicalUnits = "Persons"
+            currencyBasis = nil
+            return
+        }
+
+        if normalized.contains("dollar") {
+            family = .currency
+            let basis = Self.parseCurrencyBasis(from: normalized)
+            currencyBasis = basis
+            canonicalUnits = Self.canonicalCurrencyUnits(for: basis)
+            return
+        }
+
+        family = .generic
+        canonicalUnits = Self.canonicalGenericUnits(from: normalized, fallback: units)
+        currencyBasis = nil
+    }
+
+    var appliesScaleConversion: Bool {
+        abs(scale - 1) > 0.000_000_1
+    }
+
+    func convertedValue(_ rawValue: Double) -> Double {
+        rawValue * scale
+    }
+
+    func isComparable(to other: UnitDescriptor) -> Bool {
+        guard family == other.family else { return false }
+
+        switch family {
+        case .currency:
+            return canonicalUnits == other.canonicalUnits
+        case .percent, .index, .persons:
+            return true
+        case .generic:
+            return canonicalUnits == other.canonicalUnits
+        }
+    }
+
+    private static func normalize(_ units: String) -> String {
+        units
+            .lowercased()
+            .replacingOccurrences(of: ".", with: "")
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: ",", with: " ")
+    }
+
+    private static func parseScale(from normalized: String) -> Double {
+        if normalized.contains("trillion") { return 1_000_000_000_000 }
+        if normalized.contains("billion") { return 1_000_000_000 }
+        if normalized.contains("million") { return 1_000_000 }
+        if normalized.contains("thousand") { return 1_000 }
+        return 1
+    }
+
+    private static func parseCurrencyBasis(from normalized: String) -> CurrencyBasis {
+        if normalized.contains("chained") {
+            return .chained(year: extractYear(from: normalized))
+        }
+
+        if normalized.contains("real") || normalized.contains("constant") {
+            return .real(year: extractYear(from: normalized))
+        }
+
+        return .nominal
+    }
+
+    private static func canonicalCurrencyUnits(for basis: CurrencyBasis) -> String {
+        switch basis {
+        case .nominal:
+            return "U.S. Dollars"
+        case .chained(let year):
+            if let year {
+                return "Chained \(year) Dollars"
+            }
+            return "Chained Dollars"
+        case .real(let year):
+            if let year {
+                return "Real \(year) Dollars"
+            }
+            return "Real Dollars"
+        }
+    }
+
+    private static func extractYear(from normalized: String) -> Int? {
+        let tokens = normalized.split(whereSeparator: { !$0.isNumber })
+        return tokens.compactMap { token -> Int? in
+            guard token.count == 4 else { return nil }
+            return Int(token)
+        }.first
+    }
+
+    private static func canonicalGenericUnits(from normalized: String, fallback: String) -> String {
+        let filtered = normalized
+            .split(separator: " ")
+            .filter { token in
+                !["thousand", "thousands", "million", "millions", "billion", "billions", "trillion", "trillions", "of"].contains(String(token))
+            }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !filtered.isEmpty else { return fallback }
+        return filtered
+            .split(separator: " ")
+            .map { token in token.prefix(1).uppercased() + token.dropFirst() }
+            .joined(separator: " ")
+    }
+}
+
 // MARK: - Formatting Helpers
 
 struct ValueFormatter {
     let units: String
 
-    private var lowerUnits: String {
-        units.lowercased()
+    private var descriptor: UnitDescriptor {
+        UnitDescriptor(units: units)
     }
 
-    private var isPercent: Bool { lowerUnits.contains("percent") }
-    private var isCurrency: Bool { lowerUnits.contains("dollar") }
-    private var isBillions: Bool { lowerUnits.contains("billion") }
-    private var isMillions: Bool { lowerUnits.contains("million") }
-    private var isThousands: Bool { lowerUnits.contains("thousand") }
-    private var isIndex: Bool { lowerUnits.contains("index") }
-
     func formatValue(_ value: Double, compact: Bool) -> String {
-        if isPercent {
+        if descriptor.family == .percent {
             return String(format: "%.2f%%", value)
         }
 
-        if isBillions {
-            return formatCurrency(value * 1_000_000_000, compact: compact)
+        let scaledValue = descriptor.convertedValue(value)
+
+        if descriptor.family == .currency {
+            return formatCurrency(scaledValue, compact: compact)
         }
 
-        if isMillions {
-            return formatCurrency(value * 1_000_000, compact: compact)
+        if descriptor.family == .index {
+            return compact ? String(format: "%.1f", scaledValue) : String(format: "%.2f", scaledValue)
         }
 
-        if isThousands {
-            return formatCurrency(value * 1_000, compact: compact)
-        }
-
-        if isCurrency {
-            return formatCurrency(value, compact: compact)
-        }
-
-        if isIndex {
-            return compact ? String(format: "%.1f", value) : String(format: "%.2f", value)
-        }
-
-        return formatDecimal(value, compact: compact)
+        return formatDecimal(scaledValue, compact: compact)
     }
 
     func formatAxisValue(_ value: Double) -> String {
-        if isPercent {
+        if descriptor.family == .percent {
             return String(format: "%.1f%%", value)
         }
 
-        if isCurrency || isBillions || isMillions || isThousands {
-            return formatCurrency(value, compact: true)
+        let scaledValue = descriptor.convertedValue(value)
+
+        if descriptor.family == .currency {
+            return formatCurrency(scaledValue, compact: true)
         }
 
-        return formatDecimal(value, compact: true)
+        return formatDecimal(scaledValue, compact: true)
     }
 
     private func formatCurrency(_ value: Double, compact: Bool) -> String {

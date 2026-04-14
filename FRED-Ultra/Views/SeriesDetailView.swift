@@ -96,15 +96,15 @@ struct SeriesDetailView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 10) {
-                    Picker("Date Range", selection: $viewModel.selectedDateRange) {
+                    Picker("Date Range", selection: Binding(
+                        get: { viewModel.selectedDateRange },
+                        set: { viewModel.updateDateRange($0) }
+                    )) {
                         ForEach(DateRangeOption.allCases) { option in
                             Text(option.rawValue).tag(option)
                         }
                     }
                     .pickerStyle(.menu)
-                    .onChange(of: viewModel.selectedDateRange) { _, newValue in
-                        viewModel.updateDateRange(newValue)
-                    }
 
                     if viewModel.canNormalize {
                         Toggle("Comparison Mode", isOn: Binding(
@@ -178,7 +178,7 @@ struct SeriesDetailView: View {
     }
 
     private var chartSection: some View {
-        GroupBox(viewModel.isNormalized ? "Comparison Chart (Indexed to 100)" : "Series Chart") {
+        GroupBox(viewModel.chartSectionTitle) {
             VStack(alignment: .leading, spacing: 14) {
                 if viewModel.displayDataPoints.isEmpty {
                     ContentUnavailableView("No Data", systemImage: "chart.xyaxis.line", description: Text("There are no observations in the selected range."))

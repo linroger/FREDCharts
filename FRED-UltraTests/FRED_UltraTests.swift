@@ -195,6 +195,133 @@ struct DateRangeTests {
             #expect(!option.id.isEmpty)
         }
     }
+
+    @MainActor
+    @Test func testSeriesDetailDateRangeRebuildsVisibleChartData() async throws {
+        let series = FREDSeries(
+            id: "TEST",
+            title: "Test Series",
+            observationStart: "2010-01-01",
+            observationEnd: "2025-01-01",
+            frequency: "Annual",
+            frequencyShort: "A",
+            units: "Index",
+            unitsShort: "Idx",
+            seasonalAdjustment: "Not Adjusted",
+            seasonalAdjustmentShort: "NSA",
+            lastUpdated: "2025-01-01",
+            popularity: nil,
+            notes: nil
+        )
+
+        let observations = [
+            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2017-01-01", value: "88"),
+            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2019-01-01", value: "91"),
+            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2021-01-01", value: "97"),
+            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2023-01-01", value: "103"),
+            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2025-01-01", value: "108")
+        ]
+
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            initialSeriesData: [series.id: observations],
+            observationsLoader: { _, _ in [series.id: observations] }
+        )
+
+        let fiveYearCount = viewModel.displayDataPoints.count
+        #expect(fiveYearCount < observations.count)
+
+        viewModel.updateDateRange(.tenYears)
+
+        #expect(viewModel.selectedDateRange == .tenYears)
+        #expect(viewModel.displayDataPoints.count > fiveYearCount)
+        #expect(viewModel.displayDataPoints.count == observations.count)
+    }
+}
+
+// MARK: - Unit Conversion Tests
+
+struct UnitConversionTests {
+
+    @Test func testCurrencyUnitsWithDifferentScalesAreComparable() async throws {
+        let billions = UnitDescriptor(units: "Billions of Dollars")
+        let currentUSD = UnitDescriptor(units: "Current U.S. Dollars")
+
+        #expect(billions.family == .currency)
+        #expect(billions.scale == 1_000_000_000)
+        #expect(currentUSD.scale == 1)
+        #expect(billions.canonicalUnits == "U.S. Dollars")
+        #expect(billions.isComparable(to: currentUSD))
+        #expect(billions.convertedValue(31_000) == 31_000_000_000_000)
+    }
+
+    @Test func testChainedAndCurrentDollarSeriesAreNotAutoCompared() async throws {
+        let chained = UnitDescriptor(units: "Billions of Chained 2017 Dollars")
+        let currentUSD = UnitDescriptor(units: "Current U.S. Dollars")
+
+        #expect(chained.canonicalUnits == "Chained 2017 Dollars")
+        #expect(currentUSD.canonicalUnits == "U.S. Dollars")
+        #expect(chained.isComparable(to: currentUSD) == false)
+    }
+
+    @MainActor
+    @Test func testSeriesDetailAutoConvertsComparableCurrencySeriesForCharting() async throws {
+        let usGDP = FREDSeries(
+            id: "GDP",
+            title: "Gross Domestic Product",
+            observationStart: "2010-01-01",
+            observationEnd: "2025-01-01",
+            frequency: "Quarterly",
+            frequencyShort: "Q",
+            units: "Billions of Dollars",
+            unitsShort: "Bil. of $",
+            seasonalAdjustment: "Seasonally Adjusted Annual Rate",
+            seasonalAdjustmentShort: "SAAR",
+            lastUpdated: "2025-01-01",
+            popularity: nil,
+            notes: nil
+        )
+
+        let chinaGDP = FREDSeries(
+            id: "MKTGDPCNA646NWDB",
+            title: "Gross Domestic Product for China",
+            observationStart: "2010-01-01",
+            observationEnd: "2025-01-01",
+            frequency: "Annual",
+            frequencyShort: "A",
+            units: "Current U.S. Dollars",
+            unitsShort: "Current U.S. $",
+            seasonalAdjustment: "Not Seasonally Adjusted",
+            seasonalAdjustmentShort: "NSA",
+            lastUpdated: "2025-01-01",
+            popularity: nil,
+            notes: nil
+        )
+
+        let viewModel = SeriesDetailViewModel(
+            series: usGDP,
+            comparisonSeries: [chinaGDP],
+            initialSeriesData: [
+                usGDP.id: [
+                    FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2024-01-01", value: "29016.714")
+                ],
+                chinaGDP.id: [
+                    FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2024-01-01", value: "18273400000000")
+                ]
+            ],
+            observationsLoader: { _, _ in [:] }
+        )
+
+        let usPoint = try #require(viewModel.displayDataPoints.first(where: { $0.seriesId == usGDP.id }))
+        let chinaPoint = try #require(viewModel.displayDataPoints.first(where: { $0.seriesId == chinaGDP.id }))
+
+        #expect(viewModel.isNormalized == false)
+        #expect(viewModel.chartSectionTitle == "Comparison Chart (U.S. Dollars)")
+        #expect(viewModel.unitsInfo?.contains("automatically converts compatible series into U.S. Dollars") == true)
+        #expect(abs(usPoint.value - 29_016_714_000_000) < 0.5)
+        #expect(chinaPoint.value == 18_273_400_000_000)
+        #expect(viewModel.valueFormatter.formatAxisValue(usPoint.value).contains("T"))
+    }
 }
 
 // MARK: - Export Format Tests

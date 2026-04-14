@@ -3,6 +3,8 @@ import Foundation
 
 @MainActor
 final class SeriesDetailViewModel: ObservableObject {
+    typealias ObservationsLoader = ([String], Date?) async throws -> [String: [FREDObservation]]
+
     @Published var mainSeries: FREDSeries
     @Published private(set) var seriesData: [String: [FREDObservation]] = [:]
     @Published private(set) var additionalSeries: [FREDSeries] = []
@@ -16,9 +18,27 @@ final class SeriesDetailViewModel: ObservableObject {
     @Published var isNormalized = false
     @Published private(set) var statistics: SeriesStatistics?
     @Published private(set) var insights: [SeriesInsight] = []
+    private let observationsLoader: ObservationsLoader
 
-    init(series: FREDSeries) {
+    init(
+        series: FREDSeries,
+        comparisonSeries: [FREDSeries] = [],
+        initialSeriesData: [String: [FREDObservation]] = [:],
+        observationsLoader: @escaping ObservationsLoader = { seriesIds, startDate in
+            try await FREDService.shared.getMultipleSeriesObservations(
+                seriesIds: seriesIds,
+                startDate: startDate
+            )
+        }
+    ) {
         mainSeries = series
+        additionalSeries = comparisonSeries
+        self.observationsLoader = observationsLoader
+
+        if !initialSeriesData.isEmpty {
+            seriesData = initialSeriesData
+            rebuildDerivedState()
+        }
     }
 
     var allSeries: [FREDSeries] {
@@ -46,11 +66,23 @@ final class SeriesDetailViewModel: ObservableObject {
     }
 
     var valueFormatter: ValueFormatter {
-        ValueFormatter(units: isNormalized ? "Index" : mainSeries.units)
+        ValueFormatter(units: currentChartUnits)
     }
 
     var seriesCountLabel: String {
         allSeries.count == 1 ? "1 series loaded" : "\(allSeries.count) series loaded"
+    }
+
+    var chartSectionTitle: String {
+        if isNormalized {
+            return "Comparison Chart (Indexed to 100)"
+        }
+
+        if canNormalize, let absoluteComparisonUnits {
+            return "Comparison Chart (\(absoluteComparisonUnits))"
+        }
+
+        return "Series Chart"
     }
 
     func loadData() async {
@@ -59,10 +91,7 @@ final class SeriesDetailViewModel: ObservableObject {
         AppLogger.detail.info("Loading data for \(self.allSeries.count) series")
 
         do {
-            let data = try await FREDService.shared.getMultipleSeriesObservations(
-                seriesIds: allSeries.map(\.id),
-                startDate: selectedDateRange.startDate
-            )
+            let data = try await observationsLoader(allSeries.map(\.id), selectedDateRange.startDate)
             seriesData = data
             rebuildDerivedState()
         } catch {
@@ -95,6 +124,8 @@ final class SeriesDetailViewModel: ObservableObject {
     func updateDateRange(_ range: DateRangeOption) {
         guard selectedDateRange != range else { return }
         selectedDateRange = range
+        selectedObservation = nil
+        rebuildDerivedState()
         Task { await loadData() }
     }
 
@@ -104,7 +135,12 @@ final class SeriesDetailViewModel: ObservableObject {
             return
         }
 
-        isNormalized = enabled
+        if !enabled, !supportsAbsoluteComparison {
+            isNormalized = true
+        } else {
+            isNormalized = enabled
+        }
+
         updateUnitsInfo()
     }
 
@@ -147,30 +183,40 @@ final class SeriesDetailViewModel: ObservableObject {
             return
         }
 
-        let uniqueUnits = Set(allSeries.map { $0.units.lowercased() })
-        if uniqueUnits.count > 1 {
+        if !supportsAbsoluteComparison {
             isNormalized = true
         }
     }
 
     private func makeChartDataPoints(rebased: Bool) -> [ChartDataPoint] {
         var points: [ChartDataPoint] = []
+        let descriptors = unitDescriptorsBySeriesID()
+        let shouldConvertForAbsoluteComparison = supportsAbsoluteComparison && canNormalize
 
         for series in allSeries {
             let observations = filterObservations(seriesData[series.id] ?? [], by: selectedDateRange)
-            let baseValue = observations.compactMap(\.doubleValue).first
+            let descriptor = descriptors[series.id] ?? UnitDescriptor(units: series.units)
 
-            for observation in observations {
+            let comparableObservations = observations.compactMap { observation -> (Date, Double)? in
                 guard let date = observation.dateObject,
                       let rawValue = observation.doubleValue else {
-                    continue
+                    return nil
                 }
 
+                let absoluteValue = shouldConvertForAbsoluteComparison
+                    ? descriptor.convertedValue(rawValue)
+                    : rawValue
+                return (date, absoluteValue)
+            }
+
+            let baseValue = comparableObservations.first?.1
+
+            for (date, absoluteValue) in comparableObservations {
                 let value: Double
                 if rebased, let baseValue, baseValue != 0 {
-                    value = (rawValue / baseValue) * 100
+                    value = (absoluteValue / baseValue) * 100
                 } else {
-                    value = rawValue
+                    value = absoluteValue
                 }
 
                 points.append(
@@ -325,13 +371,58 @@ final class SeriesDetailViewModel: ObservableObject {
             return
         }
 
-        let uniqueUnits = Set(allSeries.map(\.units))
         if isNormalized {
-            unitsInfo = "Comparison mode rebases each series to 100 at the start of the selected range."
-        } else if uniqueUnits.count > 1 {
-            unitsInfo = "These series use different units. Enable comparison mode to compare relative movement instead of raw values."
+            if let absoluteComparisonUnits, usesAutoConvertedAbsoluteValues {
+                unitsInfo = "Absolute comparison automatically converts compatible series into \(absoluteComparisonUnits). Comparison mode rebases each series to 100 at the start of the selected range."
+            } else {
+                unitsInfo = "Comparison mode rebases each series to 100 at the start of the selected range."
+            }
+        } else if let absoluteComparisonUnits {
+            if usesAutoConvertedAbsoluteValues {
+                unitsInfo = "Absolute comparison automatically converts compatible series into \(absoluteComparisonUnits) so differently scaled values can be compared directly."
+            } else {
+                unitsInfo = "All visible series already share comparable units. You can still rebase them to compare relative performance."
+            }
         } else {
-            unitsInfo = "All visible series share the same units. You can still rebase them to compare relative performance."
+            unitsInfo = "These series use incompatible units or price bases. Comparison mode stays enabled so you compare relative movement instead of mismatched raw values."
         }
+    }
+
+    private var currentChartUnits: String {
+        if isNormalized {
+            return "Index"
+        }
+
+        return absoluteComparisonUnits ?? mainSeries.units
+    }
+
+    private var absoluteComparisonUnits: String? {
+        guard supportsAbsoluteComparison else { return nil }
+        return unitDescriptorsBySeriesID()[mainSeries.id]?.canonicalUnits ?? UnitDescriptor(units: mainSeries.units).canonicalUnits
+    }
+
+    private var supportsAbsoluteComparison: Bool {
+        guard canNormalize else { return false }
+
+        let descriptors = allSeries.map { UnitDescriptor(units: $0.units) }
+        guard let first = descriptors.first else { return false }
+
+        return descriptors.dropFirst().allSatisfy { first.isComparable(to: $0) }
+    }
+
+    private var usesAutoConvertedAbsoluteValues: Bool {
+        guard canNormalize, supportsAbsoluteComparison else { return false }
+
+        let descriptors = unitDescriptorsBySeriesID()
+        return allSeries.contains { series in
+            guard let descriptor = descriptors[series.id] else { return false }
+            return descriptor.appliesScaleConversion || descriptor.rawUnits.caseInsensitiveCompare(descriptor.canonicalUnits) != .orderedSame
+        }
+    }
+
+    private func unitDescriptorsBySeriesID() -> [String: UnitDescriptor] {
+        Dictionary(uniqueKeysWithValues: allSeries.map { series in
+            (series.id, UnitDescriptor(units: series.units))
+        })
     }
 }

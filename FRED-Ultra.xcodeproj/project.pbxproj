@@ -7,25 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1687339FF81A60740948241B /* SeriesDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */; };
-		195B8CF786C74E0C8554CC43 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCD749E3987031BF560B67F /* SettingsView.swift */; };
-		257E056FFE225DABC998ED6F /* SeriesDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */; };
-		2A016F45159E4EC5F0D240A9 /* SeriesDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */; };
-		2DF1EE0A5CBC3DFB910419E8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF17CE1C07FC96D80E8EB747 /* ContentView.swift */; };
-		331409BA120C668A79A08C5A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF17CE1C07FC96D80E8EB747 /* ContentView.swift */; };
-		587DD344EF95318639902DE1 /* SeriesDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */; };
-		687373B2789B1CD40E6E136C /* SeriesDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */; };
-		8822F1E3F6EBAB9BCE0A74E3 /* FREDModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666FB79E8C864D7F96DEF91D /* FREDModels.swift */; };
-		94FE473B4105778869B76E6C /* SeriesDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */; };
-		9F71F907A5A3312D4122EF58 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF17CE1C07FC96D80E8EB747 /* ContentView.swift */; };
 		A7F07C362F8D749F00B51F21 /* (null) in Resources */ = {isa = PBXBuildFile; fileRef = A7F07C352F8D749F00B51F21; };
 		A7F07D582F8D762900B51F21 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = A7F07D572F8D762900B51F21 /* README.md */; };
-		AFB8A5B2F8E833E2C4F9EE57 /* FRED_UltraApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5C629F4636227D8DFFEA0D5 /* FRED_UltraApp.swift */; };
-		B58878B54F24AF4ABF81D535 /* FRED_UltraTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33949326543BA86B1802A44A /* FRED_UltraTests.swift */; };
-		B6C5AAC0288FFD77C4D57570 /* FREDModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666FB79E8C864D7F96DEF91D /* FREDModels.swift */; };
-		DC02E060DCDCF6A44CA3832E /* FREDModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666FB79E8C864D7F96DEF91D /* FREDModels.swift */; };
-		EAD1E3537697A5AF41388FED /* FREDService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20889E0FE5C1DA70C4A2C825 /* FREDService.swift */; };
-		F3AC560304B8B2346A162F43 /* SearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 153AA69790567BE8C94B3F66 /* SearchViewModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,6 +30,7 @@
 
 /* Begin PBXFileReference section */
 		153AA69790567BE8C94B3F66 /* SearchViewModel.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SearchViewModel.swift; path = "FRED-Ultra/ViewModels/SearchViewModel.swift"; sourceTree = SOURCE_ROOT; };
+		15B7E5E82E4D125D75295A39 /* pre_tool_use.json */ = {isa = PBXFileReference; explicitFileType = text.json; lastKnownFileType = text.json; name = pre_tool_use.json; path = "logs/cac997bb-fb3b-40e2-9daa-4aaf77a7feea/pre_tool_use.json"; sourceTree = SOURCE_ROOT; };
 		15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SeriesDetailViewModel.swift; path = "FRED-Ultra/ViewModels/SeriesDetailViewModel.swift"; sourceTree = SOURCE_ROOT; };
 		20889E0FE5C1DA70C4A2C825 /* FREDService.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = FREDService.swift; path = "FRED-Ultra/Services/FREDService.swift"; sourceTree = SOURCE_ROOT; };
 		2BF345E7FC73F2C11FBB24BC /* FRED_Ultra.entitlements */ = {isa = PBXFileReference; explicitFileType = text.plist.entitlements; lastKnownFileType = text.plist.entitlements; name = FRED_Ultra.entitlements; path = "FRED-Ultra/FRED_Ultra.entitlements"; sourceTree = SOURCE_ROOT; };
@@ -55,6 +39,7 @@
 		54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SeriesDetailView.swift; path = "FRED-Ultra/Views/SeriesDetailView.swift"; sourceTree = SOURCE_ROOT; };
 		5C02D14C8D60336F83393905 /* agent-progress.txt */ = {isa = PBXFileReference; explicitFileType = text; lastKnownFileType = text; name = "agent-progress.txt"; path = "agent-progress.txt"; sourceTree = SOURCE_ROOT; };
 		666FB79E8C864D7F96DEF91D /* FREDModels.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = FREDModels.swift; path = "FRED-Ultra/Models/FREDModels.swift"; sourceTree = SOURCE_ROOT; };
+		711ADFDA0E298FEFC11A254B /* post_tool_use.json */ = {isa = PBXFileReference; explicitFileType = text.json; lastKnownFileType = text.json; name = post_tool_use.json; path = "logs/cac997bb-fb3b-40e2-9daa-4aaf77a7feea/post_tool_use.json"; sourceTree = SOURCE_ROOT; };
 		90D8BAA1036F03C66465DC2B /* handoff.md */ = {isa = PBXFileReference; explicitFileType = net.daringfireball.markdown; lastKnownFileType = net.daringfireball.markdown; name = handoff.md; path = handoff.md; sourceTree = SOURCE_ROOT; };
 		A7ADAC602D0AA85600B3368C /* FRED-Ultra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "FRED-Ultra.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7ADAC712D0AA85800B3368C /* FRED-UltraTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "FRED-UltraTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -131,6 +116,8 @@
 				B525940D31AD037A48C00E55 /* PLANS.md */,
 				90D8BAA1036F03C66465DC2B /* handoff.md */,
 				452D1851E567CB9C50FB798F /* feature_list.json */,
+				711ADFDA0E298FEFC11A254B /* post_tool_use.json */,
+				15B7E5E82E4D125D75295A39 /* pre_tool_use.json */,
 			);
 			sourceTree = "<group>";
 		};
