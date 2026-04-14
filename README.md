@@ -1,4 +1,4 @@
-# FRED Ultra
+# FREDCharts
 
 A native macOS desktop app for searching, comparing, and exporting Federal Reserve Economic Data (FRED) time-series. Built with SwiftUI and Swift Charts.
 
