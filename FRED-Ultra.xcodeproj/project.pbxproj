@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A7F07C362F8D749F00B51F21 /* (null) in Resources */ = {isa = PBXBuildFile; fileRef = A7F07C352F8D749F00B51F21; };
-		A7F07D582F8D762900B51F21 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = A7F07D572F8D762900B51F21 /* README.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,26 +27,14 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		153AA69790567BE8C94B3F66 /* SearchViewModel.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SearchViewModel.swift; path = "FRED-Ultra/ViewModels/SearchViewModel.swift"; sourceTree = SOURCE_ROOT; };
-		15B7E5E82E4D125D75295A39 /* pre_tool_use.json */ = {isa = PBXFileReference; explicitFileType = text.json; lastKnownFileType = text.json; name = pre_tool_use.json; path = "logs/cac997bb-fb3b-40e2-9daa-4aaf77a7feea/pre_tool_use.json"; sourceTree = SOURCE_ROOT; };
-		15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SeriesDetailViewModel.swift; path = "FRED-Ultra/ViewModels/SeriesDetailViewModel.swift"; sourceTree = SOURCE_ROOT; };
-		20889E0FE5C1DA70C4A2C825 /* FREDService.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = FREDService.swift; path = "FRED-Ultra/Services/FREDService.swift"; sourceTree = SOURCE_ROOT; };
-		2BF345E7FC73F2C11FBB24BC /* FRED_Ultra.entitlements */ = {isa = PBXFileReference; explicitFileType = text.plist.entitlements; lastKnownFileType = text.plist.entitlements; name = FRED_Ultra.entitlements; path = "FRED-Ultra/FRED_Ultra.entitlements"; sourceTree = SOURCE_ROOT; };
-		33949326543BA86B1802A44A /* FRED_UltraTests.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = FRED_UltraTests.swift; path = "FRED-UltraTests/FRED_UltraTests.swift"; sourceTree = SOURCE_ROOT; };
 		452D1851E567CB9C50FB798F /* feature_list.json */ = {isa = PBXFileReference; explicitFileType = text.json; lastKnownFileType = text.json; name = feature_list.json; path = feature_list.json; sourceTree = SOURCE_ROOT; };
-		54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SeriesDetailView.swift; path = "FRED-Ultra/Views/SeriesDetailView.swift"; sourceTree = SOURCE_ROOT; };
 		5C02D14C8D60336F83393905 /* agent-progress.txt */ = {isa = PBXFileReference; explicitFileType = text; lastKnownFileType = text; name = "agent-progress.txt"; path = "agent-progress.txt"; sourceTree = SOURCE_ROOT; };
-		666FB79E8C864D7F96DEF91D /* FREDModels.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = FREDModels.swift; path = "FRED-Ultra/Models/FREDModels.swift"; sourceTree = SOURCE_ROOT; };
-		711ADFDA0E298FEFC11A254B /* post_tool_use.json */ = {isa = PBXFileReference; explicitFileType = text.json; lastKnownFileType = text.json; name = post_tool_use.json; path = "logs/cac997bb-fb3b-40e2-9daa-4aaf77a7feea/post_tool_use.json"; sourceTree = SOURCE_ROOT; };
 		90D8BAA1036F03C66465DC2B /* handoff.md */ = {isa = PBXFileReference; explicitFileType = net.daringfireball.markdown; lastKnownFileType = net.daringfireball.markdown; name = handoff.md; path = handoff.md; sourceTree = SOURCE_ROOT; };
 		A7ADAC602D0AA85600B3368C /* FRED-Ultra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "FRED-Ultra.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7ADAC712D0AA85800B3368C /* FRED-UltraTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "FRED-UltraTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7ADAC7B2D0AA85800B3368C /* FRED-UltraUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "FRED-UltraUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7F07D572F8D762900B51F21 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		B525940D31AD037A48C00E55 /* PLANS.md */ = {isa = PBXFileReference; explicitFileType = net.daringfireball.markdown; lastKnownFileType = net.daringfireball.markdown; name = PLANS.md; path = PLANS.md; sourceTree = SOURCE_ROOT; };
-		BBCD749E3987031BF560B67F /* SettingsView.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = SettingsView.swift; path = "FRED-Ultra/Views/SettingsView.swift"; sourceTree = SOURCE_ROOT; };
-		D5C629F4636227D8DFFEA0D5 /* FRED_UltraApp.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = FRED_UltraApp.swift; path = "FRED-Ultra/FRED_UltraApp.swift"; sourceTree = SOURCE_ROOT; };
-		FF17CE1C07FC96D80E8EB747 /* ContentView.swift */ = {isa = PBXFileReference; explicitFileType = sourcecode.swift; name = ContentView.swift; path = "FRED-Ultra/ContentView.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -101,23 +87,11 @@
 				A7ADAC742D0AA85800B3368C /* FRED-UltraTests */,
 				A7ADAC7E2D0AA85800B3368C /* FRED-UltraUITests */,
 				A7ADAC612D0AA85600B3368C /* Products */,
-				666FB79E8C864D7F96DEF91D /* FREDModels.swift */,
-				20889E0FE5C1DA70C4A2C825 /* FREDService.swift */,
-				153AA69790567BE8C94B3F66 /* SearchViewModel.swift */,
-				15F8136CBC1EA230C4C3F850 /* SeriesDetailViewModel.swift */,
-				54EC3B03AD9B48BA1C24AEB2 /* SeriesDetailView.swift */,
-				FF17CE1C07FC96D80E8EB747 /* ContentView.swift */,
-				BBCD749E3987031BF560B67F /* SettingsView.swift */,
-				D5C629F4636227D8DFFEA0D5 /* FRED_UltraApp.swift */,
-				33949326543BA86B1802A44A /* FRED_UltraTests.swift */,
 				A7F07D572F8D762900B51F21 /* README.md */,
-				2BF345E7FC73F2C11FBB24BC /* FRED_Ultra.entitlements */,
 				5C02D14C8D60336F83393905 /* agent-progress.txt */,
 				B525940D31AD037A48C00E55 /* PLANS.md */,
 				90D8BAA1036F03C66465DC2B /* handoff.md */,
 				452D1851E567CB9C50FB798F /* feature_list.json */,
-				711ADFDA0E298FEFC11A254B /* post_tool_use.json */,
-				15B7E5E82E4D125D75295A39 /* pre_tool_use.json */,
 			);
 			sourceTree = "<group>";
 		};
@@ -251,7 +225,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A7F07C362F8D749F00B51F21 /* (null) in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -259,7 +232,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A7F07D582F8D762900B51F21 /* README.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -451,7 +423,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-Ultra";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -478,7 +450,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-Ultra";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -495,7 +467,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-UltraTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FRED-Ultra.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FRED-Ultra";
 			};
 			name = Debug;
@@ -513,7 +485,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-UltraTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FRED-Ultra.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FRED-Ultra";
 			};
 			name = Release;
@@ -529,7 +501,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-UltraUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_TARGET_NAME = "FRED-Ultra";
 			};
 			name = Debug;
@@ -545,7 +517,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "swift-maps.FedKit.FRED-UltraUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_TARGET_NAME = "FRED-Ultra";
 			};
 			name = Release;

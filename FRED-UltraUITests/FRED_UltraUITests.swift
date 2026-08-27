@@ -1,38 +1,72 @@
-//
-//  FRED_UltraUITests.swift
-//  FRED-UltraUITests
-//
-//  Created by Roger Lin on 12/11/24.
-//
-
 import XCTest
 
+/// Smoke coverage for the surfaces a user meets first.
+///
+/// These tests only assert on state the app can reach without network access or a saved
+/// API key, so they stay deterministic in CI. Anything requiring live FRED data is
+/// covered by the unit tests against injected loaders instead.
 final class FRED_UltraUITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testAppLaunchesAndShowsAWindow() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        XCTAssertTrue(
+            app.windows.firstMatch.waitForExistence(timeout: 20),
+            "The app should present a window on launch."
+        )
     }
 
+    /// Either surface is valid depending on whether this machine already has a saved
+    /// key: onboarding when it does not, the search sidebar when it does.
     @MainActor
-    func testLaunchPerformance() throws {
-        throw XCTSkip("Launch performance measurement requires repeated AX-authorized relaunches and is unstable in headless/local automation environments.")
+    func testLaunchPresentsOnboardingOrWorkspace() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 20))
+
+        let onboardingField = app.secureTextFields["welcome.apiKeyField"]
+        let sidebar = app.outlines["sidebar.list"]
+        let searchField = app.searchFields.firstMatch
+
+        let deadline = Date().addingTimeInterval(20)
+        var found = false
+        while Date() < deadline {
+            if onboardingField.exists || sidebar.exists || searchField.exists {
+                found = true
+                break
+            }
+            usleep(250_000)
+        }
+
+        XCTAssertTrue(found, "Expected either the onboarding key field or the workspace sidebar.")
+    }
+
+    /// The validate button must stay disabled until a key is typed, so an empty
+    /// submission can never reach the network.
+    @MainActor
+    func testValidateButtonRequiresAKey() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let keyField = app.secureTextFields["welcome.apiKeyField"]
+        guard keyField.waitForExistence(timeout: 10) else {
+            throw XCTSkip("This machine already has a saved API key, so onboarding is not shown.")
+        }
+
+        let validateButton = app.buttons["welcome.validateButton"]
+        XCTAssertTrue(validateButton.exists)
+        XCTAssertFalse(validateButton.isEnabled, "Validation should require a non-empty key.")
+
+        keyField.click()
+        keyField.typeText("not-a-real-key")
+
+        XCTAssertTrue(validateButton.isEnabled, "Typing a key should enable validation.")
     }
 }

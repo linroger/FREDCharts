@@ -43,3 +43,8 @@ fastlane/test_output/
 # Playgrounds
 timeline.xctimeline
 playground.xcworkspace
+
+# Local agent/session artifacts (not project configuration)
+logs/
+.remember/
+.claude/

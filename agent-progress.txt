@@ -73,3 +73,85 @@ Session log:
   - Next steps:
     - Run a live search/detail/export walkthrough with a valid FRED API key.
     - Configure a Git remote before attempting push or PR workflows.
+
+- 2026-08-28 05:00–06:10 CST / branch: main
+  - Focus: Full-codebase audit and repair pass. The app built, but a line-by-line read of
+    every source file found correctness, performance, and honesty defects that a green
+    build cannot catch. Repair them, add the analytics the app was missing, and make the
+    documentation match what ships.
+  - Environment note:
+    - `xcodebuild` was unusable because the active developer directory pointed at
+      `/Library/Developer/CommandLineTools`. Builds in this session ran through
+      `/Applications/Xcode-beta.app` (Xcode 27, macOS 27 SDK). The project scripts now
+      locate Xcode themselves rather than requiring `sudo xcode-select`.
+    - This directory is not its own Git repository; the enclosing repository is the user's
+      home directory (`/Users/rogerlin/.git`) whose HEAD is broken and whose remote points
+      at an unrelated project.
+  - Files touched:
+    - Added: FRED-Ultra/Models/Units.swift, Analytics.swift, DisplayModels.swift
+    - Added: FRED-Ultra/Services/SettingsManager.swift, ExportService.swift
+    - Added: FRED-Ultra/Support/KeychainStore.swift, AppCommandCenter.swift
+    - Added: FRED-Ultra/Views/SeriesChartView.swift, DetailComponents.swift, AddSeriesView.swift
+    - Added: script/xcode-env.sh
+    - Rewrote: FREDModels.swift, FREDService.swift, SearchViewModel.swift,
+      SeriesDetailViewModel.swift, ContentView.swift, SeriesDetailView.swift,
+      SettingsView.swift, FRED_UltraApp.swift, FRED-UltraTests, FRED-UltraUITests,
+      init.sh, script/build_and_run.sh, README.md, PLANS.md, feature_list.json
+    - Repaired: FRED-Ultra.xcodeproj/project.pbxproj
+  - Defects found and fixed:
+    1. Date windows were anchored to "now", so every discontinued series charted empty at
+       anything except All Time. Windows are now anchored to each series' last observation.
+    2. Every date-range change refetched the series. Full history is now fetched once and
+       windowed locally; FRED returns up to 100,000 observations per request.
+    3. `getMultipleSeriesObservations` used a throwing task group, so one failing
+       comparison series aborted the batch and blanked the chart. Loading is now
+       per-series, reporting failures individually.
+    4. A cancelled search returned before clearing `isLoading`, leaving the sidebar
+       spinning forever. Search state is now guarded by a generation token.
+    5. Opening a favorite that failed to load logged the error and did nothing visible.
+       The detail pane now shows a retryable error.
+    6. `SeriesStatistics` substituted sentinels for undefined metrics
+       (`firstValue == 0 ? min : firstValue`). Undefined metrics are now optional and
+       render as "n/a".
+    7. Standard deviation printed unscaled next to scaled means ("$29.0T" beside
+       "1,234.56"). All dispersion figures now use the same scale.
+    8. Differences between percentages were labelled "%" instead of percentage points.
+    9. Positive levels were prefixed with "+", and compact magnitudes dropped their
+       decimal ("+$29T" instead of "$29.0T").
+    10. Column headers named the raw units while the values were scaled — a
+        "Billions of Dollars" column showing dollars, overstating by 10^9. Chart and table
+        now carry separate, accurate labels.
+    11. `UnitDescriptor` and `NumberFormatter` were rebuilt per value per render; the data
+        table was rebuilt on every state change. Parsing is memoised and rows are lazy.
+    12. Year-over-year matching tolerance was wide enough for an annual series to match its
+        own observation and report 0% growth. (Caught by a new test, then fixed.)
+    13. The Xcode project carried a dangling build file that rendered as
+        "(null) in Resources", plus a dozen duplicate loose file references.
+    14. Two UI tests were unconditionally skipped, so a green run proved nothing.
+  - Features added:
+    - Level / Change / % Change / YoY % / Index transforms, computed on full history.
+    - Moving-average overlay with windows scaled to the series cadence.
+    - Pearson correlation between the primary and each comparison series.
+    - Max drawdown, z-score, and range position insights.
+    - Sortable data table with a change column.
+    - Exact series-ID lookup that promotes the named series to the top of the results.
+    - Keychain credential storage with migration off UserDefaults.
+    - Menu commands that disable when no series is open.
+    - Exports that contain every visible series plus the window, transform, and units.
+  - Verification:
+    - `xcodebuild ... build` -> BUILD SUCCEEDED, zero warnings, Swift 6 language mode.
+    - `xcodebuild ... -only-testing:FRED-UltraTests test` -> TEST SUCCEEDED, 92 tests.
+    - `./init.sh` -> build and unit tests pass.
+    - `./script/build_and_run.sh --verify` -> app builds and launches.
+    - FRED API request/response shapes and the error envelope were confirmed against the
+      live API with curl before the client was rewritten.
+  - Not verified:
+    - No click-through of the running UI. The XCUITest runner cannot initialise in this
+      environment ("Authentication canceled") because it needs Accessibility authorization,
+      and the user asked that no desktop automation be used. UI tests are therefore opt-in
+      via `./init.sh --with-ui-tests` rather than silently skipped.
+  - Next steps:
+    - Run `./init.sh --with-ui-tests` once on a machine where the test runner is
+      Accessibility-authorized.
+    - Walk the UI manually with a real key to confirm the chart hover readout and the save
+      panel behave as intended.

@@ -1,471 +1,1432 @@
-//
-//  FRED_UltraTests.swift
-//  FRED-UltraTests
-//
-//  Created by Roger Lin on 12/11/24.
-//
-
-import Testing
 import Foundation
+import Testing
 @testable import FRED_Ultra
 
-// MARK: - Model Tests
+// MARK: - Fixtures
 
-struct FREDModelsTests {
-    
-    @Test func testFREDObservationParsing() async throws {
-        let json = """
-        {
-            "date": "2024-01-01",
-            "value": "123.45"
+enum Fixture {
+    static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone.current
+        return calendar
+    }()
+
+    static func date(_ string: String) -> Date {
+        guard let date = FREDDate.date(from: string) else {
+            fatalError("Fixture date \(string) could not be parsed")
         }
-        """
-        let data = json.data(using: .utf8)!
-        let observation = try JSONDecoder().decode(FREDObservation.self, from: data)
-        
-        #expect(observation.date == "2024-01-01")
-        #expect(observation.value == "123.45")
-        #expect(observation.doubleValue == 123.45)
-        #expect(observation.isValidValue == true)
-        #expect(observation.dateObject != nil)
+        return date
     }
-    
-    @Test func testFREDObservationInvalidValue() async throws {
-        let json = """
-        {
-            "date": "2024-01-01",
-            "value": "."
+
+    static func points(_ entries: [(String, Double)]) -> [SeriesDataPoint] {
+        entries.map { SeriesDataPoint(date: date($0.0), value: $0.1) }
+    }
+
+    /// Monthly points starting at `start`, one per month.
+    static func monthly(start: String, values: [Double]) -> [SeriesDataPoint] {
+        let first = date(start)
+        return values.enumerated().compactMap { index, value in
+            guard let stamped = calendar.date(byAdding: .month, value: index, to: first) else { return nil }
+            return SeriesDataPoint(date: stamped, value: value)
         }
-        """
-        let data = json.data(using: .utf8)!
-        let observation = try JSONDecoder().decode(FREDObservation.self, from: data)
-        
-        #expect(observation.value == ".")
+    }
+
+    static func series(
+        id: String,
+        title: String? = nil,
+        units: String = "Index",
+        frequency: String = "Monthly",
+        frequencyShort: String? = "M",
+        observationStart: String = "2000-01-01",
+        observationEnd: String = "2026-01-01"
+    ) -> FREDSeries {
+        FREDSeries(
+            id: id,
+            title: title ?? "\(id) Series",
+            observationStart: observationStart,
+            observationEnd: observationEnd,
+            frequency: frequency,
+            frequencyShort: frequencyShort,
+            units: units,
+            unitsShort: nil,
+            seasonalAdjustment: "Not Seasonally Adjusted",
+            seasonalAdjustmentShort: "NSA",
+            lastUpdated: "2026-01-02 08:00:00-06",
+            popularity: 50,
+            notes: nil
+        )
+    }
+
+    /// Loader that always succeeds with the supplied history and counts invocations.
+    static func loader(
+        _ history: [String: [SeriesDataPoint]],
+        failures: [String: String] = [:],
+        callCount: CallCounter? = nil
+    ) -> SeriesDetailViewModel.ObservationsLoader {
+        { ids, _ in
+            callCount?.increment()
+            return ids.map { id in
+                if let failure = failures[id] {
+                    return SeriesLoadResult(seriesId: id, points: [], failureMessage: failure)
+                }
+                return SeriesLoadResult(seriesId: id, points: history[id] ?? [], failureMessage: nil)
+            }
+        }
+    }
+}
+
+/// Thread-safe counter usable from `@Sendable` loader closures.
+final class CallCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+// MARK: - Decoding
+
+struct DecodingTests {
+
+    @Test func observationParsesNumericValue() throws {
+        let json = #"{"realtime_start":"2026-01-01","date":"2024-01-01","value":"123.45"}"#
+        let observation = try JSONDecoder().decode(FREDObservation.self, from: Data(json.utf8))
+
+        #expect(observation.date == "2024-01-01")
+        #expect(observation.doubleValue == 123.45)
+        #expect(observation.isValidValue)
+        #expect(observation.dataPoint != nil)
+    }
+
+    @Test func observationTreatsMissingMarkerAsInvalid() throws {
+        let json = #"{"date":"2024-01-01","value":"."}"#
+        let observation = try JSONDecoder().decode(FREDObservation.self, from: Data(json.utf8))
+
         #expect(observation.doubleValue == nil)
         #expect(observation.isValidValue == false)
-    }
-    
-    @Test func testFREDSeriesParsing() async throws {
-        let json = """
-        {
-            "id": "GDP",
-            "title": "Gross Domestic Product",
-            "observation_start": "1947-01-01",
-            "observation_end": "2024-01-01",
-            "frequency": "Quarterly",
-            "units": "Billions of Dollars",
-            "seasonal_adjustment": "Seasonally Adjusted Annual Rate",
-            "last_updated": "2024-01-01 07:00:00-06"
-        }
-        """
-        let data = json.data(using: .utf8)!
-        let series = try JSONDecoder().decode(FREDSeries.self, from: data)
-        
-        #expect(series.id == "GDP")
-        #expect(series.title == "Gross Domestic Product")
-        #expect(series.frequency == "Quarterly")
-        #expect(series.units == "Billions of Dollars")
-        #expect(series.formattedDateRange == "1947-01-01 to 2024-01-01")
-    }
-    
-    @Test func testFREDSearchResponseParsing() async throws {
-        let json = """
-        {
-            "seriess": [
-                {
-                    "id": "GDP",
-                    "title": "Gross Domestic Product",
-                    "observation_start": "1947-01-01",
-                    "observation_end": "2024-01-01",
-                    "frequency": "Quarterly",
-                    "units": "Billions of Dollars",
-                    "seasonal_adjustment": "Seasonally Adjusted",
-                    "last_updated": "2024-01-01"
-                }
-            ]
-        }
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(FREDSearchResponse.self, from: data)
-        
-        #expect(response.series.count == 1)
-        #expect(response.series.first?.id == "GDP")
-    }
-    
-    @Test func testChartDataPointCreation() async throws {
-        let observation = FREDObservation(
-            realtimeStart: nil,
-            realtimeEnd: nil,
-            date: "2024-01-15",
-            value: "100.5"
-        )
-        
-        let dataPoint = ChartDataPoint(observation: observation, seriesId: "GDP", seriesTitle: "GDP Title")
-        
-        #expect(dataPoint != nil)
-        #expect(dataPoint?.seriesId == "GDP")
-        #expect(dataPoint?.seriesTitle == "GDP Title")
-        #expect(dataPoint?.value == 100.5)
-    }
-    
-    @Test func testChartDataPointWithInvalidValue() async throws {
-        let observation = FREDObservation(
-            realtimeStart: nil,
-            realtimeEnd: nil,
-            date: "2024-01-15",
-            value: "."
-        )
-        
-        let dataPoint = ChartDataPoint(observation: observation, seriesId: "GDP", seriesTitle: "GDP Title")
-        
-        #expect(dataPoint == nil)
-    }
-    
-    @Test func testObservationRowCreation() async throws {
-        let observation = FREDObservation(
-            realtimeStart: nil,
-            realtimeEnd: nil,
-            date: "2024-01-15",
-            value: "1234.56"
-        )
-        
-        let row = ObservationRow(observation: observation)
-        
-        #expect(row.date == "2024-01-15")
-        #expect(row.value == "1234.56")
-        #expect(row.numericValue == 1234.56)
-        #expect(row.formattedValue == "1,234.56")
-    }
-    
-    @Test func testFavoriteSeriesCreation() async throws {
-        let series = FREDSeries(
-            id: "GDP",
-            title: "Gross Domestic Product",
-            observationStart: "1947-01-01",
-            observationEnd: "2024-01-01",
-            frequency: "Quarterly",
-            frequencyShort: "Q",
-            units: "Billions of Dollars",
-            unitsShort: "Bil. of $",
-            seasonalAdjustment: "Seasonally Adjusted",
-            seasonalAdjustmentShort: "SA",
-            lastUpdated: "2024-01-01",
-            popularity: 100,
-            notes: nil
-        )
-        
-        let favorite = FavoriteSeries(from: series)
-        
-        #expect(favorite.id == "GDP")
-        #expect(favorite.title == "Gross Domestic Product")
-        #expect(favorite.units == "Billions of Dollars")
-        #expect(favorite.frequency == "Quarterly")
-    }
-}
-
-// MARK: - Date Range Tests
-
-struct DateRangeTests {
-    
-    @Test func testDateRangeOptionAll() async throws {
-        let option = DateRangeOption.all
-        #expect(option.startDate == nil)
-        #expect(option.rawValue == "All Time")
-    }
-    
-    @Test func testDateRangeOptionOneYear() async throws {
-        let option = DateRangeOption.oneYear
-        #expect(option.startDate != nil)
-        
-        let calendar = Calendar.current
-        let expectedStart = calendar.date(byAdding: .year, value: -1, to: Date())!
-        let actualStart = option.startDate!
-        
-        // Check that dates are within 1 day of each other (accounting for test timing)
-        let difference = abs(expectedStart.timeIntervalSince(actualStart))
-        #expect(difference < 86400) // Less than 1 day
-    }
-    
-    @Test func testAllDateRangeOptions() async throws {
-        let options = DateRangeOption.allCases
-        #expect(options.count == 8)
-        
-        // All options should have valid IDs
-        for option in options {
-            #expect(!option.id.isEmpty)
-        }
+        #expect(observation.dataPoint == nil)
     }
 
-    @MainActor
-    @Test func testSeriesDetailDateRangeRebuildsVisibleChartData() async throws {
-        let series = FREDSeries(
-            id: "TEST",
-            title: "Test Series",
-            observationStart: "2010-01-01",
-            observationEnd: "2025-01-01",
-            frequency: "Annual",
-            frequencyShort: "A",
-            units: "Index",
-            unitsShort: "Idx",
-            seasonalAdjustment: "Not Adjusted",
-            seasonalAdjustmentShort: "NSA",
-            lastUpdated: "2025-01-01",
-            popularity: nil,
-            notes: nil
-        )
-
+    /// FRED encodes gaps as "."; those rows must be dropped rather than charted as zero.
+    @Test func parsingDropsMissingRowsAndSorts() {
         let observations = [
-            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2017-01-01", value: "88"),
-            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2019-01-01", value: "91"),
-            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2021-01-01", value: "97"),
-            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2023-01-01", value: "103"),
-            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2025-01-01", value: "108")
+            FREDObservation(date: "2024-03-01", value: "3"),
+            FREDObservation(date: "2024-01-01", value: "1"),
+            FREDObservation(date: "2024-02-01", value: "."),
+            FREDObservation(date: "2024-04-01", value: "nan")
         ]
 
-        let viewModel = SeriesDetailViewModel(
-            series: series,
-            initialSeriesData: [series.id: observations],
-            observationsLoader: { _, _ in [series.id: observations] }
+        let points = observations.parsedDataPoints()
+
+        #expect(points.count == 2)
+        #expect(points[0].value == 1)
+        #expect(points[1].value == 3)
+        #expect(points[0].date < points[1].date)
+    }
+
+    @Test func searchResponseUsesSeriessKey() throws {
+        let json = """
+        {"count":1,"seriess":[{"id":"GDP","title":"Gross Domestic Product","observation_start":"1947-01-01",
+        "observation_end":"2026-04-01","frequency":"Quarterly","frequency_short":"Q","units":"Billions of Dollars",
+        "seasonal_adjustment":"Seasonally Adjusted Annual Rate","last_updated":"2026-08-26 07:49:01-05","popularity":92}]}
+        """
+        let response = try JSONDecoder().decode(FREDSearchResponse.self, from: Data(json.utf8))
+
+        #expect(response.series.count == 1)
+        #expect(response.series[0].id == "GDP")
+        #expect(response.series[0].seriesFrequency == .quarterly)
+    }
+
+    /// A single sparsely-populated series must not discard an entire page of results.
+    @Test func seriesDecodingToleratesMissingOptionalFields() throws {
+        let json = #"{"id":"OBSCURE"}"#
+        let series = try JSONDecoder().decode(FREDSeries.self, from: Data(json.utf8))
+
+        #expect(series.id == "OBSCURE")
+        #expect(series.title == "OBSCURE")
+        #expect(series.units.isEmpty)
+        #expect(series.frequency == "Unknown")
+        #expect(series.formattedDateRange == "Unknown coverage")
+    }
+
+    @Test func seriesDecodingFailsWithoutAnIdentifier() {
+        let json = #"{"title":"No identifier"}"#
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(FREDSeries.self, from: Data(json.utf8))
+        }
+    }
+
+    @Test func shortNotesCollapseNewlinesAndTruncate() {
+        let long = String(repeating: "a", length: 400)
+        let series = Fixture.series(id: "X")
+        let withNotes = FREDSeries(
+            id: series.id, title: series.title, observationStart: series.observationStart,
+            observationEnd: series.observationEnd, frequency: series.frequency,
+            units: series.units, seasonalAdjustment: series.seasonalAdjustment,
+            lastUpdated: series.lastUpdated, notes: "line one\nline two"
         )
 
-        let fiveYearCount = viewModel.displayDataPoints.count
-        #expect(fiveYearCount < observations.count)
+        #expect(withNotes.shortNotes == "line one line two")
 
-        viewModel.updateDateRange(.tenYears)
+        let truncated = FREDSeries(
+            id: series.id, title: series.title, observationStart: series.observationStart,
+            observationEnd: series.observationEnd, frequency: series.frequency,
+            units: series.units, seasonalAdjustment: series.seasonalAdjustment,
+            lastUpdated: series.lastUpdated, notes: long
+        )
 
-        #expect(viewModel.selectedDateRange == .tenYears)
-        #expect(viewModel.displayDataPoints.count > fiveYearCount)
-        #expect(viewModel.displayDataPoints.count == observations.count)
+        #expect(truncated.shortNotes?.count == 178)
+        #expect(truncated.shortNotes?.hasSuffix("…") == true)
     }
 }
 
-// MARK: - Unit Conversion Tests
+private extension String {
+    init(repeating character: String, length: Int) {
+        self = String(repeating: character, count: length)
+    }
+}
 
-struct UnitConversionTests {
+// MARK: - Units
 
-    @Test func testCurrencyUnitsWithDifferentScalesAreComparable() async throws {
+struct UnitTests {
+
+    @Test func currencyScalesAreParsed() {
         let billions = UnitDescriptor(units: "Billions of Dollars")
-        let currentUSD = UnitDescriptor(units: "Current U.S. Dollars")
+        let dollars = UnitDescriptor(units: "Current U.S. Dollars")
 
         #expect(billions.family == .currency)
         #expect(billions.scale == 1_000_000_000)
-        #expect(currentUSD.scale == 1)
+        #expect(dollars.scale == 1)
         #expect(billions.canonicalUnits == "U.S. Dollars")
-        #expect(billions.isComparable(to: currentUSD))
+        #expect(billions.isComparable(to: dollars))
         #expect(billions.convertedValue(31_000) == 31_000_000_000_000)
     }
 
-    @Test func testChainedAndCurrentDollarSeriesAreNotAutoCompared() async throws {
+    /// Chained dollars are a different price basis; treating them as nominal dollars
+    /// would silently compare real and nominal magnitudes.
+    @Test func chainedDollarsAreNotComparableWithNominal() {
         let chained = UnitDescriptor(units: "Billions of Chained 2017 Dollars")
-        let currentUSD = UnitDescriptor(units: "Current U.S. Dollars")
+        let nominal = UnitDescriptor(units: "Current U.S. Dollars")
 
         #expect(chained.canonicalUnits == "Chained 2017 Dollars")
-        #expect(currentUSD.canonicalUnits == "U.S. Dollars")
-        #expect(chained.isComparable(to: currentUSD) == false)
+        #expect(chained.isComparable(to: nominal) == false)
     }
 
-    @MainActor
-    @Test func testSeriesDetailAutoConvertsComparableCurrencySeriesForCharting() async throws {
-        let usGDP = FREDSeries(
-            id: "GDP",
-            title: "Gross Domestic Product",
-            observationStart: "2010-01-01",
-            observationEnd: "2025-01-01",
-            frequency: "Quarterly",
-            frequencyShort: "Q",
-            units: "Billions of Dollars",
-            unitsShort: "Bil. of $",
-            seasonalAdjustment: "Seasonally Adjusted Annual Rate",
-            seasonalAdjustmentShort: "SAAR",
-            lastUpdated: "2025-01-01",
-            popularity: nil,
-            notes: nil
+    @Test func nonCurrencyFamiliesAreDetected() {
+        #expect(UnitDescriptor(units: "Percent").family == .percent)
+        #expect(UnitDescriptor(units: "Percent Change at Annual Rate").family == .percent)
+        #expect(UnitDescriptor(units: "Index 1982-1984=100").family == .index)
+        #expect(UnitDescriptor(units: "Thousands of Persons").family == .persons)
+        #expect(UnitDescriptor(units: "Thousands of Persons").scale == 1_000)
+        #expect(UnitDescriptor(units: "Thousands of Units").family == .generic)
+        #expect(UnitDescriptor(units: "Thousands of Units").canonicalUnits == "Units")
+    }
+
+    @Test func descriptorCacheReturnsEqualValues() {
+        let first = UnitDescriptor.cached(units: "Millions of Dollars")
+        let second = UnitDescriptor.cached(units: "Millions of Dollars")
+
+        #expect(first == second)
+        #expect(first.scale == 1_000_000)
+    }
+
+    @Test func percentFormattingIsLocaleIndependent() {
+        let formatter = ValueFormatter(units: "Percent", locale: Locale(identifier: "de_DE"))
+        #expect(formatter.formatValue(4.6612, compact: false) == "4.66%")
+    }
+
+    @Test func currencyFormattingCompactsLargeMagnitudes() {
+        let formatter = ValueFormatter(units: "Billions of Dollars", locale: Locale(identifier: "en_US"))
+
+        #expect(formatter.formatValue(29_016.714, compact: true) == "$29.0T")
+        #expect(formatter.formatAxisValue(29_016.714) == "$29.0T")
+        #expect(formatter.formatValue(-1.5, compact: true) == "-$1.5B")
+    }
+
+    /// A difference between two percentages is measured in percentage points; labelling
+    /// it "%" would overstate the quantity.
+    @Test func percentDeltasUsePercentagePoints() {
+        let formatter = ValueFormatter(units: "Percent")
+
+        #expect(formatter.formatMagnitude(0.25, compact: false) == "0.25 pp")
+        #expect(formatter.formatChange(-0.25, compact: false) == "-0.25 pp")
+        #expect(formatter.deltaUnitLabel == "pp")
+    }
+
+    /// A "Billions of Dollars" reading is rendered in dollars, so the column it sits
+    /// under must say dollars. Labelling it "Billions of Dollars" overstated the figure
+    /// by a factor of a billion.
+    @Test func presentationUnitsDescribeTheScaledValue() {
+        #expect(UnitDescriptor(units: "Billions of Dollars").presentationUnits == "U.S. Dollars")
+        #expect(UnitDescriptor(units: "Thousands of Persons").presentationUnits == "Persons")
+        #expect(UnitDescriptor(units: "Current U.S. Dollars").presentationUnits == "Current U.S. Dollars")
+        #expect(UnitDescriptor(units: "Index 1982-1984=100").presentationUnits == "Index 1982-1984=100")
+        #expect(UnitDescriptor(units: "Percent").presentationUnits == "Percent")
+    }
+
+    /// The Data tab and every export show values exactly as FRED publishes them, so a
+    /// figure copied from the table matches the CSV and the FRED website.
+    @Test func preciseFormattingLeavesPublishedValuesAlone() {
+        let dollars = ValueFormatter(units: "Billions of Dollars", locale: Locale(identifier: "en_US"))
+        #expect(dollars.formatPrecise(29_016.714) == "29,016.714")
+        #expect(dollars.formatPrecise(-1.5) == "-1.5")
+        #expect(dollars.formatPreciseChange(12.25) == "+12.25")
+
+        let percent = ValueFormatter(units: "Percent", locale: Locale(identifier: "en_US"))
+        #expect(percent.formatPrecise(4.66) == "4.66%")
+        #expect(percent.formatPreciseChange(-0.25) == "-0.25 pp")
+    }
+
+    /// Levels are not deltas: a positive reading must not be prefixed with "+".
+    @Test func levelsAreUnsignedAndDeltasAreSigned() {
+        let formatter = ValueFormatter(units: "Billions of Dollars", locale: Locale(identifier: "en_US"))
+        #expect(formatter.formatValue(1_000, compact: true) == "$1.0T")
+        #expect(formatter.formatChange(1_000, compact: true) == "+$1.0T")
+        #expect(formatter.formatChange(-1_000, compact: true) == "-$1.0T")
+    }
+
+    @Test func nonFiniteValuesAreRenderedAsPlaceholders() {
+        let formatter = ValueFormatter(units: "Index")
+        #expect(formatter.formatValue(.nan, compact: false) == "—")
+        #expect(formatter.formatChange(.infinity, compact: false) == "—")
+    }
+}
+
+// MARK: - Date Ranges
+
+struct DateRangeTests {
+
+    @Test func allTimeHasNoLowerBound() {
+        #expect(DateRangeOption.all.startDate(anchoredTo: Date()) == nil)
+    }
+
+    /// Windows are measured from the series' own last observation, so a series that
+    /// stopped publishing in 2015 still has a populated "1 Year" view.
+    @Test func windowsAreAnchoredToTheSuppliedDate() throws {
+        let anchor = Fixture.date("2015-06-30")
+        let start = try #require(DateRangeOption.oneYear.startDate(anchoredTo: anchor, calendar: Fixture.calendar))
+
+        #expect(start == Fixture.date("2014-06-30"))
+    }
+
+    @Test func everyOptionHasAStableIdentifier() {
+        let options = DateRangeOption.allCases
+        #expect(options.count == 9)
+        #expect(Set(options.map(\.id)).count == options.count)
+    }
+}
+
+// MARK: - Analytics
+
+struct AnalyticsTests {
+
+    @Test func periodChangeAndPercentChange() {
+        let points = Fixture.monthly(start: "2024-01-01", values: [100, 110, 99])
+
+        let change = SeriesAnalytics.periodDifference(points, asPercent: false)
+        #expect(change.count == 2)
+        #expect(change[0].value == 10)
+        #expect(abs(change[1].value - (-11)) < 0.000_001)
+
+        let percent = SeriesAnalytics.periodDifference(points, asPercent: true)
+        #expect(percent.count == 2)
+        #expect(abs(percent[0].value - 10) < 0.000_001)
+        #expect(abs(percent[1].value - (-10)) < 0.000_001)
+    }
+
+    /// Percent change on a series that crosses zero must keep the sign of the movement.
+    @Test func percentChangeUsesAbsoluteDenominator() {
+        let points = Fixture.monthly(start: "2024-01-01", values: [-2, -1])
+        let percent = SeriesAnalytics.periodDifference(points, asPercent: true)
+
+        #expect(percent.count == 1)
+        #expect(abs(percent[0].value - 50) < 0.000_001)
+    }
+
+    @Test func periodChangeNeedsAtLeastTwoPoints() {
+        #expect(SeriesAnalytics.periodDifference(Fixture.monthly(start: "2024-01-01", values: [1]), asPercent: false).isEmpty)
+        #expect(SeriesAnalytics.periodDifference([], asPercent: true).isEmpty)
+    }
+
+    @Test func yearOverYearMatchesTheObservationOneYearBack() {
+        let values = (0..<25).map { Double(100 + $0) }
+        let points = Fixture.monthly(start: "2020-01-01", values: values)
+
+        let yoy = SeriesAnalytics.yearOverYearPercentChange(points, calendar: Fixture.calendar)
+
+        // The first 12 months have no prior-year counterpart within tolerance.
+        #expect(yoy.count == 13)
+        #expect(yoy[0].date == points[12].date)
+        #expect(abs(yoy[0].value - 12.0) < 0.000_001)
+    }
+
+    /// Annual data has a 365-day cadence: a fixed index offset would look 12 rows back
+    /// and find nothing, so matching is done by date.
+    @Test func yearOverYearWorksForAnnualSeries() {
+        let points = Fixture.points([
+            ("2020-01-01", 100), ("2021-01-01", 110), ("2022-01-01", 121)
+        ])
+
+        let yoy = SeriesAnalytics.yearOverYearPercentChange(points, calendar: Fixture.calendar)
+
+        #expect(yoy.count == 2)
+        #expect(abs(yoy[0].value - 10) < 0.000_001)
+        #expect(abs(yoy[1].value - 10) < 0.000_001)
+    }
+
+    @Test func rebasingSetsTheFirstVisiblePointToOneHundred() {
+        let points = Fixture.monthly(start: "2024-01-01", values: [50, 75, 100])
+        let rebased = SeriesAnalytics.rebasedToOneHundred(points)
+
+        #expect(rebased[0].value == 100)
+        #expect(rebased[1].value == 150)
+        #expect(rebased[2].value == 200)
+    }
+
+    @Test func rebasingLeavesZeroBaseUntouched() {
+        let points = Fixture.monthly(start: "2024-01-01", values: [0, 10])
+        #expect(SeriesAnalytics.rebasedToOneHundred(points) == points)
+    }
+
+    @Test func movingAverageIsTrailingAndFullWindowOnly() {
+        let points = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4, 5])
+        let averaged = SeriesAnalytics.movingAverage(points, window: 3)
+
+        #expect(averaged.count == 3)
+        #expect(averaged[0].value == 2)
+        #expect(averaged[0].date == points[2].date)
+        #expect(averaged[2].value == 4)
+        #expect(SeriesAnalytics.movingAverage(points, window: 9).isEmpty)
+    }
+
+    @Test func filterReturnsTheWindowSuffix() {
+        let points = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4])
+
+        #expect(SeriesAnalytics.filter(points, from: nil).count == 4)
+        #expect(SeriesAnalytics.filter(points, from: points[2].date).count == 2)
+        #expect(SeriesAnalytics.filter(points, from: Fixture.date("2030-01-01")).isEmpty)
+    }
+
+    @Test func downsamplingPreservesEndpointsAndBudget() {
+        let values = (0..<5_000).map { Double($0 % 97) }
+        let points = Fixture.monthly(start: "1900-01-01", values: values)
+
+        let sampled = SeriesAnalytics.downsample(points, threshold: 500)
+
+        #expect(sampled.count <= 500)
+        #expect(sampled.count >= 490)
+        #expect(sampled.first == points.first)
+        #expect(sampled.last == points.last)
+        #expect(zip(sampled, sampled.dropFirst()).allSatisfy { $0.date < $1.date })
+    }
+
+    @Test func downsamplingIsANoOpBelowThreshold() {
+        let points = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3])
+        #expect(SeriesAnalytics.downsample(points, threshold: 500) == points)
+    }
+
+    /// Extremes are what make an economic chart readable; uniform sampling loses them.
+    @Test func downsamplingKeepsExtremeValues() {
+        var values = (0..<4_000).map { _ in 10.0 }
+        values[1_234] = 999
+        values[2_345] = -999
+        let points = Fixture.monthly(start: "1900-01-01", values: values)
+
+        let sampled = SeriesAnalytics.downsample(points, threshold: 400)
+
+        #expect(sampled.contains { $0.value == 999 })
+        #expect(sampled.contains { $0.value == -999 })
+    }
+
+    @Test func correlationDetectsPerfectRelationships() {
+        let base = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4, 5])
+        let same = Fixture.monthly(start: "2024-01-01", values: [2, 4, 6, 8, 10])
+        let inverse = Fixture.monthly(start: "2024-01-01", values: [10, 8, 6, 4, 2])
+
+        let positive = SeriesAnalytics.pearsonCorrelation(SeriesAnalytics.alignedPairs(base, same))
+        let negative = SeriesAnalytics.pearsonCorrelation(SeriesAnalytics.alignedPairs(base, inverse))
+
+        #expect(positive != nil)
+        #expect(negative != nil)
+        #expect(abs((positive ?? 0) - 1) < 0.000_001)
+        #expect(abs((negative ?? 0) + 1) < 0.000_001)
+    }
+
+    @Test func correlationIsUndefinedForConstantSeries() {
+        let base = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4])
+        let flat = Fixture.monthly(start: "2024-01-01", values: [7, 7, 7, 7])
+
+        #expect(SeriesAnalytics.pearsonCorrelation(SeriesAnalytics.alignedPairs(base, flat)) == nil)
+        #expect(SeriesAnalytics.pearsonCorrelation([(1, 2), (2, 4)]) == nil)
+    }
+
+    /// Monthly and quarterly series never share a calendar, so alignment is by nearest
+    /// date rather than exact match.
+    @Test func alignmentPairsDifferentCadences() {
+        let monthly = Fixture.monthly(start: "2020-01-01", values: (0..<24).map(Double.init))
+        let quarterly = Fixture.points([
+            ("2020-01-01", 0), ("2020-04-01", 3), ("2020-07-01", 6), ("2020-10-01", 9)
+        ])
+
+        let pairs = SeriesAnalytics.alignedPairs(monthly, quarterly)
+
+        #expect(pairs.count == 4)
+        #expect(pairs.allSatisfy { $0.0 == $0.1 })
+    }
+}
+
+// MARK: - Statistics
+
+struct StatisticsTests {
+
+    @Test func statisticsSummariseAWindow() throws {
+        let points = Fixture.monthly(start: "2020-01-01", values: [10, 20, 30, 40])
+        let statistics = try #require(SeriesStatistics.make(points: points, units: "Index"))
+
+        #expect(statistics.count == 4)
+        #expect(statistics.minimum == 10)
+        #expect(statistics.maximum == 40)
+        #expect(statistics.mean == 25)
+        #expect(statistics.median == 25)
+        #expect(statistics.firstValue == 10)
+        #expect(statistics.latestValue == 40)
+        #expect(statistics.previousValue == 30)
+        #expect(statistics.latestChange == 10)
+        #expect(statistics.totalChange == 30)
+        #expect(statistics.range == 30)
+    }
+
+    @Test func medianUsesTheMiddleOfOddSamples() throws {
+        let points = Fixture.monthly(start: "2020-01-01", values: [5, 1, 3])
+        let statistics = try #require(SeriesStatistics.make(points: points, units: ""))
+        #expect(statistics.median == 3)
+    }
+
+    /// A one-observation window genuinely has no prior reading; reporting `nil` beats
+    /// substituting a placeholder that reads like data.
+    @Test func singleObservationHasNoChangeMetrics() throws {
+        let statistics = try #require(SeriesStatistics.make(points: Fixture.monthly(start: "2020-01-01", values: [42]), units: ""))
+
+        #expect(statistics.previousValue == nil)
+        #expect(statistics.latestChange == nil)
+        #expect(statistics.latestPercentChange == nil)
+        #expect(statistics.formattedLatestChange == "n/a")
+        #expect(statistics.formattedPercentChange == "n/a")
+        #expect(statistics.rangePosition == nil)
+        #expect(statistics.annualizedChange == nil)
+    }
+
+    @Test func emptyWindowProducesNoStatistics() {
+        #expect(SeriesStatistics.make(points: [], units: "Index") == nil)
+    }
+
+    @Test func compoundGrowthMatchesTheClosedForm() throws {
+        let points = Fixture.points([("2015-01-01", 100), ("2025-01-01", 200)])
+        let statistics = try #require(SeriesStatistics.make(points: points, units: "Index"))
+        let annualized = try #require(statistics.annualizedChange)
+
+        // 2^(1/10) - 1 ≈ 7.177%
+        #expect(abs(annualized - 7.177) < 0.05)
+        #expect(statistics.formattedAnnualizedChange.hasPrefix("+"))
+        #expect(statistics.formattedAnnualizedChange.hasSuffix("/ yr"))
+    }
+
+    /// Compounding across a sign change is not a meaningful growth rate.
+    @Test func compoundGrowthIsUndefinedAcrossZero() throws {
+        let points = Fixture.points([("2015-01-01", -5), ("2025-01-01", 5)])
+        let statistics = try #require(SeriesStatistics.make(points: points, units: "Percent"))
+        #expect(statistics.annualizedChange == nil)
+        #expect(statistics.formattedAnnualizedChange == "n/a")
+    }
+
+    @Test func drawdownMeasuresThePeakToTroughDecline() {
+        #expect(abs((SeriesStatistics.maxDrawdown([100, 120, 60, 90]) ?? 0) - 50) < 0.000_001)
+        #expect(SeriesStatistics.maxDrawdown([100, 110, 120]) == nil)
+        #expect(SeriesStatistics.maxDrawdown([1, -1, 2]) == nil)
+        #expect(SeriesStatistics.maxDrawdown([5]) == nil)
+    }
+
+    /// Dispersion previously printed unscaled while every other figure was scaled, so a
+    /// GDP window reported a mean of "$29.0T" beside a standard deviation of "1,234.56".
+    @Test func dispersionIsScaledLikeEveryOtherFigure() throws {
+        let points = Fixture.monthly(start: "2020-01-01", values: [1_000, 3_000])
+        let statistics = try #require(SeriesStatistics.make(points: points, units: "Billions of Dollars"))
+
+        #expect(statistics.formattedMean.contains("T"))
+        #expect(statistics.formattedStdDev.contains("B") || statistics.formattedStdDev.contains("T"))
+    }
+
+    @Test func signedFormattingUsesExplicitSigns() throws {
+        let up = try #require(SeriesStatistics.make(points: Fixture.monthly(start: "2020-01-01", values: [10, 12]), units: ""))
+        let down = try #require(SeriesStatistics.make(points: Fixture.monthly(start: "2020-01-01", values: [12, 10]), units: ""))
+
+        #expect(up.formattedLatestChange.hasPrefix("+"))
+        #expect(up.formattedPercentChange == "+20.00%")
+        #expect(down.formattedLatestChange.hasPrefix("-"))
+        #expect(down.formattedPercentChange == "-16.67%")
+    }
+}
+
+// MARK: - Export
+
+struct ExportTests {
+
+    private func payload(transform: SeriesTransform = .level) -> ExportPayload {
+        ExportPayload(
+            generatedAt: Fixture.date("2026-01-05"),
+            rangeLabel: "5 Years",
+            transform: transform,
+            columns: [
+                ExportPayload.SeriesColumn(
+                    series: Fixture.series(id: "GDP", title: "Gross Domestic Product", units: "Billions of Dollars"),
+                    points: Fixture.points([("2024-01-01", 100.5), ("2024-04-01", 101.25)])
+                ),
+                ExportPayload.SeriesColumn(
+                    series: Fixture.series(id: "UNRATE", title: "Unemployment Rate", units: "Percent"),
+                    points: Fixture.points([("2024-04-01", 3.8)])
+                )
+            ]
+        )
+    }
+
+    @Test func csvUsesOneColumnPerVisibleSeries() {
+        let csv = ExportService.makeCSV(payload())
+        let lines = csv.split(separator: "\n").map(String.init)
+
+        #expect(lines.contains("Date,GDP,UNRATE"))
+        #expect(lines.contains("2024-01-01,100.5,"))
+        #expect(lines.contains("2024-04-01,101.25,3.8"))
+        #expect(csv.contains("# Window: 5 Years"))
+        #expect(csv.contains("# Transform: Level"))
+        #expect(csv.contains("# Series: GDP — Gross Domestic Product"))
+    }
+
+    @Test func csvHeaderRecordsTransformedUnits() {
+        let csv = ExportService.makeCSV(payload(transform: .yearOverYear))
+        #expect(csv.contains("# Transform: YoY %"))
+        #expect(csv.contains("[Percent;"))
+    }
+
+    @Test func csvFieldsAreEscapedPerRFC4180() {
+        #expect(ExportService.csvField("plain") == "plain")
+        #expect(ExportService.csvField("with,comma") == "\"with,comma\"")
+        #expect(ExportService.csvField("say \"hi\"") == "\"say \"\"hi\"\"\"")
+    }
+
+    /// Large magnitudes must not be exported in scientific notation; spreadsheets
+    /// import "1.82734e+13" as text.
+    @Test func numbersAvoidScientificNotation() {
+        #expect(ExportService.numberString(18_273_400_000_000) == "18273400000000")
+        #expect(ExportService.numberString(29_016.714) == "29016.714")
+        #expect(ExportService.numberString(-4.5) == "-4.5")
+        #expect(ExportService.numberString(0) == "0")
+        #expect(ExportService.numberString(.nan).isEmpty)
+    }
+
+    @Test func jsonCarriesMetadataAndEveryColumn() throws {
+        let json = ExportService.makeJSON(payload())
+        let object = try #require(
+            try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
         )
 
-        let chinaGDP = FREDSeries(
-            id: "MKTGDPCNA646NWDB",
-            title: "Gross Domestic Product for China",
-            observationStart: "2010-01-01",
-            observationEnd: "2025-01-01",
-            frequency: "Annual",
-            frequencyShort: "A",
-            units: "Current U.S. Dollars",
-            unitsShort: "Current U.S. $",
-            seasonalAdjustment: "Not Seasonally Adjusted",
-            seasonalAdjustmentShort: "NSA",
-            lastUpdated: "2025-01-01",
-            popularity: nil,
-            notes: nil
+        let metadata = try #require(object["metadata"] as? [String: Any])
+        #expect(metadata["window"] as? String == "5 Years")
+        #expect(metadata["transform"] as? String == "Level")
+
+        let series = try #require(object["series"] as? [[String: Any]])
+        #expect(series.count == 2)
+        #expect(series[0]["id"] as? String == "GDP")
+        #expect((series[0]["observations"] as? [[String: Any]])?.count == 2)
+    }
+
+    @Test func clipboardTextIsTabSeparated() {
+        let text = ExportService.makeClipboardText(payload())
+        let lines = text.split(separator: "\n").map(String.init)
+
+        #expect(lines[0] == "Date\tGDP\tUNRATE")
+        #expect(lines[2] == "2024-04-01\t101.25\t3.8")
+    }
+
+    @Test func filenamesDropPathSeparators() {
+        #expect(ExportService.sanitizedFilename("GDP/2024") == "GDP-2024")
+        #expect(ExportService.sanitizedFilename("   ") == "fred-export")
+    }
+
+    @Test func emptyPayloadIsDetected() {
+        let empty = ExportPayload(rangeLabel: "All Time", transform: .level, columns: [])
+        #expect(empty.isEmpty)
+    }
+}
+
+// MARK: - Errors
+
+struct FREDErrorTests {
+
+    @Test func errorsExplainThemselves() {
+        #expect(FREDError.missingAPIKey.errorDescription?.contains("API key") == true)
+        #expect(FREDError.missingAPIKey.recoverySuggestion != nil)
+        #expect(FREDError.rateLimited.recoverySuggestion?.contains("120") == true)
+        #expect(FREDError.invalidURL.errorDescription?.contains("URL") == true)
+        #expect(FREDError.apiError("Bad Request.").errorDescription == "Bad Request.")
+    }
+
+    @Test func describeAppendsRecoveryGuidance() {
+        let description = SearchViewModel.describe(FREDError.missingAPIKey)
+        #expect(description.contains("API key"))
+        #expect(description.contains("fred.stlouisfed.org"))
+    }
+}
+
+// MARK: - Search View Model
+
+@MainActor
+struct SearchViewModelTests {
+
+    private func makeViewModel(
+        results: [FREDSeries] = [Fixture.series(id: "GDP")],
+        error: FREDError? = nil,
+        recorded: RecordedSearches = RecordedSearches()
+    ) -> (SearchViewModel, RecordedSearches) {
+        let viewModel = SearchViewModel(
+            debounce: .milliseconds(1),
+            searcher: { _, _ in
+                if let error { throw error }
+                return results
+            },
+            recordRecentSearch: { recorded.append($0) }
         )
+        return (viewModel, recorded)
+    }
+
+    @Test func searchPopulatesResultsAndRecordsTheQuery() async {
+        let (viewModel, recorded) = makeViewModel()
+
+        await viewModel.performSearch(query: "  gdp  ")
+
+        #expect(viewModel.results.count == 1)
+        #expect(viewModel.isLoading == false)
+        #expect(viewModel.hasSearched)
+        #expect(viewModel.errorMessage == nil)
+        #expect(recorded.values == ["gdp"])
+    }
+
+    @Test func failedSearchesSurfaceAMessageAndRecordNothing() async {
+        let (viewModel, recorded) = makeViewModel(error: .rateLimited)
+
+        await viewModel.performSearch(query: "gdp")
+
+        #expect(viewModel.results.isEmpty)
+        #expect(viewModel.isLoading == false)
+        #expect(viewModel.errorMessage?.contains("Rate limited") == true)
+        #expect(recorded.values.isEmpty)
+    }
+
+    /// Clearing the query used to leave `isLoading` stuck at `true`, so the sidebar
+    /// showed "Searching FRED…" forever.
+    @Test func clearingResetsLoadingState() async {
+        let (viewModel, _) = makeViewModel()
+        await viewModel.performSearch(query: "gdp")
+
+        viewModel.clearResults()
+
+        #expect(viewModel.isLoading == false)
+        #expect(viewModel.hasSearched == false)
+        #expect(viewModel.results.isEmpty)
+        #expect(viewModel.canRefresh == false)
+    }
+
+    @Test func emptyQueriesDoNotSearch() async {
+        let (viewModel, recorded) = makeViewModel()
+
+        await viewModel.performSearch(query: "   ")
+
+        #expect(viewModel.hasSearched == false)
+        #expect(viewModel.isLoading == false)
+        #expect(recorded.values.isEmpty)
+    }
+
+    /// A full page of results may not be all of them, and the sidebar says so.
+    @Test func aFullResultPageIsReportedAsCapped() async {
+        let recorded = RecordedSearches()
+        let viewModel = SearchViewModel(
+            resultLimit: 3,
+            debounce: .milliseconds(1),
+            searcher: { _, limit in (0..<limit).map { Fixture.series(id: "S\($0)") } },
+            recordRecentSearch: { recorded.append($0) }
+        )
+
+        await viewModel.performSearch(query: "gdp")
+        #expect(viewModel.results.count == 3)
+        #expect(viewModel.resultsAreCapped)
+        #expect(viewModel.resultLimitNotice.contains("3 most popular"))
+    }
+
+    @Test func debouncedTypingIssuesASingleSearch() async throws {
+        let counter = CallCounter()
+        let viewModel = SearchViewModel(
+            debounce: .milliseconds(40),
+            searcher: { _, _ in
+                counter.increment()
+                return [Fixture.series(id: "GDP")]
+            },
+            recordRecentSearch: { _ in }
+        )
+
+        for text in ["g", "gd", "gdp"] {
+            viewModel.query = text
+        }
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(counter.count == 1)
+        #expect(viewModel.isLoading == false)
+        #expect(viewModel.results.count == 1)
+    }
+}
+
+/// Collects the queries a view model reports as "recent".
+final class RecordedSearches: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    func append(_ value: String) {
+        lock.lock()
+        storage.append(value)
+        lock.unlock()
+    }
+
+    var values: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
+
+// MARK: - Series Detail View Model
+
+@MainActor
+struct SeriesDetailViewModelTests {
+
+    private var gdp: FREDSeries {
+        Fixture.series(id: "GDP", title: "Gross Domestic Product", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+    }
+
+    private var annualHistory: [SeriesDataPoint] {
+        Fixture.points([
+            ("2017-01-01", 88), ("2019-01-01", 91), ("2021-01-01", 97),
+            ("2023-01-01", 103), ("2025-01-01", 108)
+        ])
+    }
+
+    @Test func initialHistoryProducesDerivedState() {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Annual", frequencyShort: "A")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            initialHistory: [series.id: annualHistory],
+            selectedRange: .tenYears,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([:])
+        )
+
+        #expect(viewModel.visibleObservationCount == 5)
+        #expect(viewModel.chartPoints.count == 5)
+        #expect(viewModel.statistics?.latestValue == 108)
+        #expect(viewModel.displayUnits == "Index")
+        #expect(viewModel.tableRows.first?.value == 108)
+        #expect(viewModel.tableRows.count == 5)
+    }
+
+    /// The window is measured from the series' last observation, so switching ranges is
+    /// purely local — the old build refetched from FRED on every range change.
+    @Test func changingTheRangeReusesLoadedHistory() async {
+        let counter = CallCounter()
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Annual", frequencyShort: "A")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .fiveYears,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: annualHistory], callCount: counter)
+        )
+
+        await viewModel.loadData()
+        let fiveYearCount = viewModel.visibleObservationCount
+
+        viewModel.updateRange(.tenYears)
+
+        #expect(counter.count == 1)
+        #expect(viewModel.selectedRange == .tenYears)
+        #expect(viewModel.visibleObservationCount > fiveYearCount)
+        #expect(viewModel.visibleObservationCount == 5)
+    }
+
+    /// Anchoring to "now" made every discontinued series render an empty chart.
+    @Test func discontinuedSeriesStillPopulateShortWindows() async {
+        let series = Fixture.series(
+            id: "OLD", units: "Index", frequency: "Monthly",
+            observationStart: "2010-01-01", observationEnd: "2015-06-01"
+        )
+        let history = Fixture.monthly(start: "2010-01-01", values: (0..<66).map(Double.init))
+
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .oneYear,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: history])
+        )
+
+        await viewModel.loadData()
+
+        #expect(viewModel.visibleObservationCount > 0)
+        #expect(viewModel.isWindowEmpty == false)
+        #expect(viewModel.statistics?.latestValue == 65)
+    }
+
+    @Test func emptyWindowIsReportedSeparatelyFromFailure() async {
+        let series = Fixture.series(id: "SPARSE", units: "Index", observationStart: "1950-01-01", observationEnd: "1950-02-01")
+        let history = Fixture.points([("1950-01-01", 1), ("1950-02-01", 2)])
+
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: history])
+        )
+        await viewModel.loadData()
+        #expect(viewModel.isWindowEmpty == false)
+
+        // The whole series predates any window anchored after it, but "All Time" works.
+        #expect(viewModel.hasLoadedHistory)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func transformsChangeTheDisplayedUnitsAndValues() async {
+        let series = Fixture.series(id: "TEST", units: "Billions of Dollars", frequency: "Annual", frequencyShort: "A")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: Fixture.points([
+                ("2022-01-01", 100), ("2023-01-01", 110), ("2024-01-01", 121)
+            ])])
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.displayUnits == "Billions of Dollars")
+
+        viewModel.updateTransform(.periodPercentChange)
+        #expect(viewModel.displayUnits == "Percent")
+        #expect(viewModel.visibleObservationCount == 2)
+        #expect(abs((viewModel.statistics?.latestValue ?? 0) - 10) < 0.000_001)
+
+        viewModel.updateTransform(.indexed)
+        #expect(viewModel.displayUnits == "Index")
+        #expect(viewModel.chartPoints.first?.value == 100)
+
+        viewModel.updateTransform(.level)
+        #expect(viewModel.displayUnits == "Billions of Dollars")
+    }
+
+    /// Growth transforms are computed on the full history, so the first visible point of
+    /// a windowed growth chart is a real calculation rather than a dropped row.
+    @Test func growthTransformsUseHistoryOutsideTheWindow() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Annual", frequencyShort: "A")
+        let history = Fixture.points([
+            ("2018-01-01", 100), ("2019-01-01", 110), ("2020-01-01", 121),
+            ("2021-01-01", 133.1), ("2022-01-01", 146.41), ("2023-01-01", 161.051)
+        ])
+
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .fiveYears,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: history])
+        )
+        await viewModel.loadData()
+        viewModel.updateTransform(.periodPercentChange)
+
+        // 2019-2023 fall inside a five-year window anchored at 2023, and every one of
+        // them has a computable change because 2018 is still available upstream.
+        #expect(viewModel.visibleObservationCount == 5)
+        #expect(viewModel.chartPoints.allSatisfy { abs($0.value - 10) < 0.001 })
+    }
+
+    @Test func comparableCurrencySeriesShareOneAxis() async {
+        let usGDP = Fixture.series(id: "GDP", title: "US GDP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+        let chinaGDP = Fixture.series(id: "CNGDP", title: "China GDP", units: "Current U.S. Dollars", frequency: "Annual", frequencyShort: "A")
 
         let viewModel = SeriesDetailViewModel(
             series: usGDP,
             comparisonSeries: [chinaGDP],
-            initialSeriesData: [
-                usGDP.id: [
-                    FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2024-01-01", value: "29016.714")
-                ],
-                chinaGDP.id: [
-                    FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2024-01-01", value: "18273400000000")
-                ]
-            ],
-            observationsLoader: { _, _ in [:] }
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([
+                usGDP.id: Fixture.points([("2024-01-01", 29_016.714)]),
+                chinaGDP.id: Fixture.points([("2024-01-01", 18_273_400_000_000)])
+            ])
         )
+        await viewModel.loadData()
 
-        let usPoint = try #require(viewModel.displayDataPoints.first(where: { $0.seriesId == usGDP.id }))
-        let chinaPoint = try #require(viewModel.displayDataPoints.first(where: { $0.seriesId == chinaGDP.id }))
+        #expect(viewModel.transform == .level)
+        #expect(viewModel.displayUnits == "U.S. Dollars")
 
-        #expect(viewModel.isNormalized == false)
-        #expect(viewModel.chartSectionTitle == "Comparison Chart (U.S. Dollars)")
-        #expect(viewModel.unitsInfo?.contains("automatically converts compatible series into U.S. Dollars") == true)
-        #expect(abs(usPoint.value - 29_016_714_000_000) < 0.5)
-        #expect(chinaPoint.value == 18_273_400_000_000)
-        #expect(viewModel.valueFormatter.formatAxisValue(usPoint.value).contains("T"))
+        let usPoint = viewModel.chartPoints.first { $0.seriesId == usGDP.id }
+        let chinaPoint = viewModel.chartPoints.first { $0.seriesId == chinaGDP.id }
+
+        #expect(abs((usPoint?.value ?? 0) - 29_016_714_000_000) < 1)
+        #expect(chinaPoint?.value == 18_273_400_000_000)
+        let axisLabel = viewModel.valueFormatter.formatAxisValue(usPoint?.value ?? 0)
+        #expect(axisLabel.contains("T"))
+    }
+
+    /// Percent and dollar series cannot honestly share a value axis, so adding one
+    /// switches the chart to an index comparison instead of plotting mismatched scales.
+    @Test func incompatibleUnitsSwitchToAnIndexComparison() async {
+        let gdpSeries = gdp
+        let unemployment = Fixture.series(id: "UNRATE", title: "Unemployment Rate", units: "Percent", frequency: "Monthly")
+
+        let viewModel = SeriesDetailViewModel(
+            series: gdpSeries,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([
+                gdpSeries.id: Fixture.points([("2024-01-01", 100), ("2024-04-01", 110)]),
+                unemployment.id: Fixture.points([("2024-01-01", 4), ("2024-04-01", 3.8)])
+            ])
+        )
+        await viewModel.loadData()
+        #expect(viewModel.transform == .level)
+
+        await viewModel.addSeries(unemployment)
+
+        #expect(viewModel.transform == .indexed)
+        #expect(viewModel.displayUnits == "Index")
+        #expect(viewModel.unitsNotice?.isEmpty == false)
+    }
+
+    @Test func anExplicitTransformChoiceIsNotOverridden() async {
+        let gdpSeries = gdp
+        let unemployment = Fixture.series(id: "UNRATE", units: "Percent", frequency: "Monthly")
+
+        let viewModel = SeriesDetailViewModel(
+            series: gdpSeries,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([
+                gdpSeries.id: Fixture.points([("2024-01-01", 100), ("2024-04-01", 110)]),
+                unemployment.id: Fixture.points([("2024-01-01", 4), ("2024-04-01", 3.8)])
+            ])
+        )
+        await viewModel.loadData()
+        viewModel.updateTransform(.level)
+
+        await viewModel.addSeries(unemployment)
+
+        #expect(viewModel.transform == .level)
+        #expect(viewModel.unitsNotice?.contains("do not share units") == true)
+    }
+
+    /// One failing comparison series used to abort the whole batch and blank the chart.
+    @Test func oneFailingComparisonSeriesDoesNotBlankTheChart() async {
+        let gdpSeries = gdp
+        let broken = Fixture.series(id: "BROKEN", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+
+        let viewModel = SeriesDetailViewModel(
+            series: gdpSeries,
+            comparisonSeries: [broken],
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader(
+                [gdpSeries.id: Fixture.points([("2024-01-01", 100), ("2024-04-01", 110)])],
+                failures: [broken.id: "No observations were returned for this series."]
+            )
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.errorMessage == nil)
+        #expect(viewModel.warnings.count == 1)
+        #expect(viewModel.warnings[0].contains("BROKEN"))
+        #expect(viewModel.chartPoints.contains { $0.seriesId == gdpSeries.id })
+        #expect(viewModel.visibleObservationCount == 2)
+    }
+
+    @Test func aFailingPrimarySeriesIsAHardError() async {
+        let series = Fixture.series(id: "GONE")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([:], failures: [series.id: "Series not found."])
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.errorMessage == "Series not found.")
+        #expect(viewModel.hasLoadedHistory == false)
+        #expect(viewModel.chartPoints.isEmpty)
+    }
+
+    @Test func removingAComparisonSeriesDropsItsData() async {
+        let gdpSeries = gdp
+        let other = Fixture.series(id: "GNP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+
+        let viewModel = SeriesDetailViewModel(
+            series: gdpSeries,
+            comparisonSeries: [other],
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([
+                gdpSeries.id: Fixture.points([("2024-01-01", 100), ("2024-04-01", 110)]),
+                other.id: Fixture.points([("2024-01-01", 90), ("2024-04-01", 95)])
+            ])
+        )
+        await viewModel.loadData()
+        #expect(viewModel.allSeries.count == 2)
+        #expect(viewModel.comparisonSummaries.count == 1)
+
+        viewModel.removeSeries(id: other.id)
+
+        #expect(viewModel.allSeries.count == 1)
+        #expect(viewModel.comparisonSummaries.isEmpty)
+        #expect(viewModel.chartPoints.allSatisfy { $0.seriesId == gdpSeries.id })
+
+        // The primary series can never be removed.
+        viewModel.removeSeries(id: gdpSeries.id)
+        #expect(viewModel.allSeries.count == 1)
+    }
+
+    @Test func correlationIsReportedForComparisons() async {
+        let base = Fixture.series(id: "A", units: "Index", frequency: "Monthly")
+        let mirror = Fixture.series(id: "B", units: "Index", frequency: "Monthly")
+
+        let viewModel = SeriesDetailViewModel(
+            series: base,
+            comparisonSeries: [mirror],
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([
+                base.id: Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4, 5]),
+                mirror.id: Fixture.monthly(start: "2024-01-01", values: [5, 4, 3, 2, 1])
+            ])
+        )
+        await viewModel.loadData()
+
+        let summary = viewModel.comparisonSummaries.first
+        #expect(summary?.overlappingObservations == 5)
+        #expect(abs((summary?.correlation ?? 0) + 1) < 0.000_001)
+        #expect(summary?.interpretation.contains("negative") == true)
+    }
+
+    @Test func movingAverageAddsASecondPlotSeries() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly", frequencyShort: "M")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2024-01-01", values: (0..<24).map(Double.init))])
+        )
+        await viewModel.loadData()
+        #expect(viewModel.chartPoints.allSatisfy { $0.role == .observed })
+
+        viewModel.updateMovingAverage(.medium)
+
+        let overlay = viewModel.chartPoints.filter { $0.role == .movingAverage }
+        #expect(!overlay.isEmpty)
+        #expect(overlay[0].plotKey.hasSuffix("(avg)"))
+        #expect(viewModel.movingAverageLabel == "3-period moving average")
+    }
+
+    @Test func nearestPointLookupFindsTheClosestObservation() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2024-01-01", values: [10, 20, 30])])
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.nearestPoints(to: Fixture.date("2024-02-05")).first?.value == 20)
+        #expect(viewModel.nearestPoints(to: Fixture.date("1900-01-01")).first?.value == 10)
+        #expect(viewModel.nearestPoints(to: Fixture.date("2100-01-01")).first?.value == 30)
+    }
+
+    /// The chart is drawn in scaled units while the table and exports stay in published
+    /// units; both labels must describe what their own surface actually shows.
+    @Test func chartAndTableUnitLabelsDiffer() async {
+        let series = Fixture.series(id: "GDP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: Fixture.points([("2024-01-01", 29_016.714)])])
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.displayUnitsLabel == "U.S. Dollars")
+        #expect(viewModel.publishedUnitsLabel == "Billions of Dollars")
+        #expect(viewModel.chartSectionTitle == "Series Chart — U.S. Dollars")
+
+        let row = try? #require(viewModel.tableRows.first)
+        #expect(row?.formattedValue.contains("29,016.714") == true)
+
+        // The export carries the published figure, matching the table exactly.
+        let exported = ExportService.makeCSV(viewModel.makeExportPayload())
+        #expect(exported.contains("29016.714"))
+    }
+
+    @Test func latestVisibleDateAvoidsBuildingTheTable() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2024-01-01", values: [1, 2, 3])])
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.latestVisibleDate == viewModel.tableRows.first?.date)
+        #expect(viewModel.exportRowCount == 3)
+    }
+
+    @Test func tableRowsAreNewestFirstWithChanges() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2024-01-01", values: [10, 20, 15])])
+        )
+        await viewModel.loadData()
+
+        let rows = viewModel.tableRows
+        #expect(rows.count == 3)
+        #expect(rows[0].value == 15)
+        #expect(rows[0].changeFromPrevious == -5)
+        #expect(rows[0].formattedChange.hasPrefix("-"))
+        #expect(rows[2].changeFromPrevious == nil)
+        #expect(rows[2].formattedChange == "—")
+    }
+
+    @Test func exportPayloadMirrorsTheVisibleWindow() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2024-01-01", values: [10, 20, 30])])
+        )
+        await viewModel.loadData()
+        viewModel.updateTransform(.periodChange)
+
+        let payload = viewModel.makeExportPayload()
+
+        #expect(payload.transform == .periodChange)
+        #expect(payload.rangeLabel == "All Time")
+        #expect(payload.columns.count == 1)
+        #expect(payload.columns[0].points.map(\.value) == [10, 10])
+        #expect(payload.isEmpty == false)
+    }
+
+    @Test func chartIsDownsampledOnlyWhenItExceedsTheBudget() async {
+        let series = Fixture.series(id: "BIG", units: "Index", frequency: "Daily", frequencyShort: "D")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            chartPointBudget: 200,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "1900-01-01", values: (0..<2_000).map { Double($0 % 53) })])
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.isChartDownsampled)
+        #expect(viewModel.chartPoints.count <= 200)
+        // Everything else still reports the full dataset.
+        #expect(viewModel.visibleObservationCount == 2_000)
+        #expect(viewModel.tableRows.count == 2_000)
+        #expect(viewModel.makeExportPayload().columns[0].points.count == 2_000)
     }
 }
 
-// MARK: - Export Format Tests
+// MARK: - Settings
 
-struct ExportFormatTests {
-    
-    @Test func testCSVFormat() async throws {
-        let format = ExportFormat.csv
-        #expect(format.fileExtension == "csv")
-        #expect(format.contentType == "text/csv")
+@MainActor
+struct SettingsManagerTests {
+
+    private func makeManager() -> (SettingsManager, UserDefaults, String) {
+        let suiteName = "FRED-Ultra.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let account = "FRED_API_KEY_TEST_\(UUID().uuidString)"
+        return (SettingsManager(defaults: defaults, keychainAccount: account), defaults, suiteName)
     }
-    
-    @Test func testJSONFormat() async throws {
-        let format = ExportFormat.json
-        #expect(format.fileExtension == "json")
-        #expect(format.contentType == "application/json")
+
+    @Test func favoritesRoundTripThroughStorage() {
+        let (manager, defaults, suite) = makeManager()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let series = Fixture.series(id: "GDP", title: "Gross Domestic Product")
+        manager.addFavorite(series)
+
+        #expect(manager.isFavorite("GDP"))
+        #expect(manager.favorites.count == 1)
+
+        // Adding twice must not duplicate.
+        manager.addFavorite(series)
+        #expect(manager.favorites.count == 1)
+
+        manager.toggleFavorite(series)
+        #expect(manager.isFavorite("GDP") == false)
+
+        manager.addFavorite(series)
+        let reloaded = SettingsManager(defaults: defaults, keychainAccount: "unused-\(UUID().uuidString)")
+        #expect(reloaded.favorites.map(\.id) == ["GDP"])
+    }
+
+    @Test func recentSearchesDeduplicateAndCap() {
+        let (manager, defaults, suite) = makeManager()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        manager.addRecentSearch("gdp")
+        manager.addRecentSearch("  unrate ")
+        manager.addRecentSearch("GDP")
+
+        #expect(manager.recentSearches == ["GDP", "unrate"])
+
+        for index in 0..<20 {
+            manager.addRecentSearch("query-\(index)")
+        }
+        #expect(manager.recentSearches.count == SettingsManager.maximumRecentSearches)
+        #expect(manager.recentSearches.first == "query-19")
+
+        manager.clearRecentSearches()
+        #expect(manager.recentSearches.isEmpty)
+    }
+
+    @Test func blankQueriesAreIgnored() {
+        let (manager, defaults, suite) = makeManager()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        manager.addRecentSearch("   ")
+        #expect(manager.recentSearches.isEmpty)
+    }
+
+    /// Migration is only meaningful if a preferences-stored key is still usable when the
+    /// Keychain refuses the write, so the key must survive construction either way.
+    @Test func aLegacyPreferencesKeyIsAdopted() {
+        let suiteName = "FRED-Ultra.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("legacy-key-value", forKey: "FRED_API_KEY")
+        let account = "FRED_API_KEY_TEST_\(UUID().uuidString)"
+        let manager = SettingsManager(defaults: defaults, keychainAccount: account)
+
+        #expect(manager.apiKey == "legacy-key-value")
+        #expect(manager.hasValidAPIKey)
+        #expect(manager.apiKeyStorage != .none)
+
+        manager.clearAPIKey()
+        #expect(manager.hasValidAPIKey == false)
+        #expect(manager.apiKeyStorage == .none)
+        #expect(defaults.string(forKey: "FRED_API_KEY") == nil)
     }
 }
 
-// MARK: - Export Service Tests
+// MARK: - Display Models
 
-struct ExportServiceTests {
-    
-    @Test func testCSVExport() async throws {
-        let series = FREDSeries(
-            id: "TEST",
-            title: "Test Series",
-            observationStart: "2024-01-01",
-            observationEnd: "2024-12-31",
-            frequency: "Monthly",
-            frequencyShort: "M",
-            units: "Index",
-            unitsShort: "Idx",
-            seasonalAdjustment: "Not Adjusted",
-            seasonalAdjustmentShort: "NSA",
-            lastUpdated: "2024-01-01",
-            popularity: nil,
-            notes: nil
-        )
-        
-        let observations = [
-            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2024-01-01", value: "100.0"),
-            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2024-02-01", value: "101.5")
+struct DisplayModelTests {
+
+    @Test func transformsDeclareTheirResultUnits() {
+        #expect(SeriesTransform.level.resultUnits(baseUnits: "Percent") == "Percent")
+        #expect(SeriesTransform.periodChange.resultUnits(baseUnits: "Index") == "Index")
+        #expect(SeriesTransform.periodPercentChange.resultUnits(baseUnits: "Index") == "Percent")
+        #expect(SeriesTransform.yearOverYear.resultUnits(baseUnits: "Billions of Dollars") == "Percent")
+        #expect(SeriesTransform.indexed.resultUnits(baseUnits: "Percent") == "Index")
+
+        #expect(SeriesTransform.level.isUnitNeutral == false)
+        #expect(SeriesTransform.periodChange.isUnitNeutral == false)
+        #expect(SeriesTransform.indexed.isUnitNeutral)
+    }
+
+    @Test func movingAverageWindowsScaleWithCadence() {
+        #expect(MovingAverageOption.off.window(for: .monthly) == nil)
+        #expect(MovingAverageOption.medium.window(for: .monthly) == 3)
+        #expect(MovingAverageOption.long.window(for: .monthly) == 12)
+        #expect(MovingAverageOption.medium.window(for: .daily) == 63)
+        #expect(MovingAverageOption.short.window(for: .annual) == 2)
+    }
+
+    @Test func frequencyParsingPrefersTheShortCode() {
+        #expect(SeriesFrequency.parse(short: "Q", long: "anything") == .quarterly)
+        #expect(SeriesFrequency.parse(short: nil, long: "Monthly") == .monthly)
+        #expect(SeriesFrequency.parse(short: nil, long: "Not stated") == .unknown)
+        #expect(SeriesFrequency.quarterly.periodsPerYear == 4)
+        #expect(SeriesFrequency.unknown.periodsPerYear == nil)
+    }
+
+    @Test func chartPointIdentityDistinguishesRoles() {
+        let date = Fixture.date("2024-01-01")
+        let observed = ChartDataPoint(seriesId: "A", seriesTitle: "A", date: date, value: 1)
+        let averaged = ChartDataPoint(seriesId: "A", seriesTitle: "A", date: date, value: 1, role: .movingAverage)
+
+        #expect(observed.id != averaged.id)
+        #expect(observed.plotKey == "A")
+        #expect(averaged.plotKey == "A (avg)")
+    }
+
+    /// Searching an exact identifier must surface that series first; popularity ranking
+    /// otherwise buries a niche ID under its better-known relatives.
+    @Test func exactIdentifierMatchesAreDetectedAndPromoted() {
+        #expect(SearchQuery.looksLikeSeriesID("GDPC1"))
+        #expect(SearchQuery.looksLikeSeriesID("MKTGDPCNA646NWDB"))
+        #expect(SearchQuery.looksLikeSeriesID("DGS10"))
+        #expect(SearchQuery.looksLikeSeriesID("gdp") == false)
+        #expect(SearchQuery.looksLikeSeriesID("Real GDP") == false)
+        #expect(SearchQuery.looksLikeSeriesID("2024") == false)
+        #expect(SearchQuery.looksLikeSeriesID("") == false)
+
+        let results = [
+            Fixture.series(id: "GDP"),
+            Fixture.series(id: "GDPC1"),
+            Fixture.series(id: "GDPPOT")
         ]
-        
-        let csv = ExportService.exportToCSV(series: series, observations: observations)
-        
-        #expect(csv.contains("Date,Value"))
-        #expect(csv.contains("Test Series"))
-        #expect(csv.contains("TEST"))
-        #expect(csv.contains("2024-01-01"))
-        #expect(csv.contains("100.0"))
+
+        #expect(SearchQuery.promotingExactMatch(in: results, for: "GDPC1").map(\.id) == ["GDPC1", "GDP", "GDPPOT"])
+        #expect(SearchQuery.promotingExactMatch(in: results, for: "gdpc1").map(\.id) == ["GDPC1", "GDP", "GDPPOT"])
+        #expect(SearchQuery.promotingExactMatch(in: results, for: "GDP").map(\.id) == ["GDP", "GDPC1", "GDPPOT"])
+        #expect(SearchQuery.promotingExactMatch(in: results, for: "unemployment").map(\.id) == ["GDP", "GDPC1", "GDPPOT"])
+        #expect(SearchQuery.promotingExactMatch(in: [], for: "GDP").isEmpty)
     }
-    
-    @Test func testJSONExport() async throws {
-        let series = FREDSeries(
-            id: "TEST",
-            title: "Test Series",
-            observationStart: "2024-01-01",
-            observationEnd: "2024-12-31",
-            frequency: "Monthly",
-            frequencyShort: "M",
-            units: "Index",
-            unitsShort: "Idx",
-            seasonalAdjustment: "Not Adjusted",
-            seasonalAdjustmentShort: "NSA",
-            lastUpdated: "2024-01-01",
-            popularity: nil,
-            notes: nil
+
+    /// `Table` needs a total order, and the oldest visible row has no prior observation.
+    @Test func observationRowsExposeASortableChange() {
+        let base = ObservationRow(
+            date: Fixture.date("2024-01-01"), rawDate: "2024-01-01", formattedDate: "Jan 1, 2024",
+            value: 10, formattedValue: "10", changeFromPrevious: nil, formattedChange: "—"
         )
-        
-        let observations = [
-            FREDObservation(realtimeStart: nil, realtimeEnd: nil, date: "2024-01-01", value: "100.0")
-        ]
-        
-        let json = ExportService.exportToJSON(series: series, observations: observations)
-        
-        #expect(json.contains("\"id\" : \"TEST\""))
-        #expect(json.contains("\"title\" : \"Test Series\""))
-        #expect(json.contains("observations"))
-        #expect(json.contains("metadata"))
-    }
-}
-
-// MARK: - Statistics Tests
-
-struct StatisticsTests {
-    
-    @Test func testSeriesStatisticsFormatting() async throws {
-        let stats = SeriesStatistics(
-            count: 100,
-            min: 10.0,
-            max: 200.0,
-            mean: 105.5,
-            median: 100.0,
-            standardDeviation: 25.3,
-            latestValue: 150.0,
-            latestChange: 5.5,
-            latestPercentChange: 3.8
+        let next = ObservationRow(
+            date: Fixture.date("2024-02-01"), rawDate: "2024-02-01", formattedDate: "Feb 1, 2024",
+            value: 12, formattedValue: "12", changeFromPrevious: 2, formattedChange: "+2"
         )
-        
-        #expect(stats.count == 100)
-        #expect(stats.formattedMin == "10")
-        #expect(stats.formattedMax == "200")
-        #expect(stats.formattedLatestChange == "+5.5")
-        #expect(stats.formattedPercentChange == "+3.80%")
-    }
-    
-    @Test func testNegativeChangeFormatting() async throws {
-        let stats = SeriesStatistics(
-            count: 50,
-            min: 5.0,
-            max: 100.0,
-            mean: 50.0,
-            median: 45.0,
-            standardDeviation: 10.0,
-            latestValue: 40.0,
-            latestChange: -5.0,
-            latestPercentChange: -11.11
-        )
-        
-        #expect(stats.formattedLatestChange == "-5")
-        #expect(stats.formattedPercentChange == "-11.11%")
-    }
-}
 
-// MARK: - Error Tests
+        #expect(base.sortableChange == 0)
+        #expect(next.sortableChange == 2)
+    }
 
-struct FREDErrorTests {
-    
-    @Test func testMissingAPIKeyError() async throws {
-        let error = FREDError.missingAPIKey
-        #expect(error.errorDescription?.contains("API key") == true)
-        #expect(error.recoverySuggestion != nil)
-    }
-    
-    @Test func testRateLimitedError() async throws {
-        let error = FREDError.rateLimited
-        #expect(error.errorDescription?.contains("Rate limited") == true)
-        #expect(error.recoverySuggestion?.contains("120") == true)
-    }
-    
-    @Test func testInvalidURLError() async throws {
-        let error = FREDError.invalidURL
-        #expect(error.errorDescription?.contains("URL") == true)
+    @Test func comparisonSummaryExplainsWeakEvidence() {
+        let sparse = ComparisonSummary(id: "A", seriesTitle: "A", overlappingObservations: 1, correlation: nil)
+        #expect(sparse.formattedCorrelation == "n/a")
+        #expect(sparse.interpretation.contains("Not enough"))
+
+        let strong = ComparisonSummary(id: "B", seriesTitle: "B", overlappingObservations: 40, correlation: 0.92)
+        #expect(strong.formattedCorrelation == "0.92")
+        #expect(strong.interpretation.contains("Very strong positive"))
     }
 }

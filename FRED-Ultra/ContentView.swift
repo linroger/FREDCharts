@@ -1,59 +1,134 @@
+import AppKit
 import SwiftUI
+
+/// Identifies a selectable sidebar row. Favorites and search results can list the same
+/// series, so the case distinguishes them and keeps the selection highlight on the row
+/// the reader actually clicked.
+enum SidebarSelection: Hashable {
+    case result(String)
+    case favorite(String)
+
+    var seriesID: String {
+        switch self {
+        case .result(let id), .favorite(let id):
+            return id
+        }
+    }
+}
 
 struct ContentView: View {
     @ObservedObject private var settings = SettingsManager.shared
     @StateObject private var searchViewModel = SearchViewModel()
+
+    @State private var selection: SidebarSelection?
     @State private var selectedSeries: FREDSeries?
-    @State private var columnVisibility = NavigationSplitViewVisibility.doubleColumn
+    @State private var isResolvingSelection = false
+    @State private var selectionError: String?
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
         Group {
             if settings.hasValidAPIKey {
-                workspaceView
+                workspace
             } else {
                 WelcomeView()
             }
         }
     }
 
-    private var workspaceView: some View {
+    private var workspace: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             WorkspaceSidebarView(
                 searchViewModel: searchViewModel,
                 favorites: settings.favorites,
                 recentSearches: settings.recentSearches,
-                onSelectSeries: { selectedSeries = $0 },
+                selection: $selection,
                 onSelectRecentSearch: { searchViewModel.query = $0 },
-                onSelectFavorite: { favorite in
-                    Task { await loadFavorite(favorite) }
-                },
-                onRefreshSearch: {
-                    Task { await searchViewModel.refresh() }
-                },
-                onRemoveFavorite: settings.removeFavorite,
+                onRefreshSearch: { Task { await searchViewModel.refresh() } },
+                onRemoveFavorite: { settings.removeFavorite(id: $0) },
                 onClearRecentSearches: settings.clearRecentSearches
             )
         } detail: {
-            Group {
-                if let selectedSeries {
-                    SeriesDetailView(series: selectedSeries)
-                        .id(selectedSeries.id)
-                } else {
-                    WorkspaceLandingView(
-                        favoritesCount: settings.favorites.count,
-                        recentSearches: settings.recentSearches,
-                        onUseRecentSearch: { searchViewModel.query = $0 }
-                    )
-                }
-            }
+            detailPane
+        }
+        // `.task(id:)` cancels the previous lookup automatically, so rapid clicking
+        // through results never lets a stale series win the race.
+        .task(id: selection) {
+            await resolveSelection()
         }
     }
 
-    private func loadFavorite(_ favorite: FavoriteSeries) async {
+    @ViewBuilder
+    private var detailPane: some View {
+        if let selectionError {
+            ContentUnavailableView {
+                Label("Could Not Open Series", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(selectionError)
+            } actions: {
+                Button("Try Again") {
+                    let current = selection
+                    selection = nil
+                    selection = current
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        } else if isResolvingSelection {
+            VStack(spacing: 14) {
+                ProgressView()
+                    .controlSize(.large)
+                Text("Opening series…")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let selectedSeries {
+            SeriesDetailView(series: selectedSeries)
+                .id(selectedSeries.id)
+        } else {
+            WorkspaceLandingView(
+                favoritesCount: settings.favorites.count,
+                recentSearches: settings.recentSearches,
+                onUseRecentSearch: { searchViewModel.query = $0 }
+            )
+        }
+    }
+
+    /// Resolves a sidebar selection into full series metadata.
+    ///
+    /// Search results already carry metadata; favorites only store an ID, so those are
+    /// fetched. Failures used to be logged and swallowed, leaving the click with no
+    /// visible effect at all.
+    private func resolveSelection() async {
+        guard let selection else {
+            selectedSeries = nil
+            selectionError = nil
+            isResolvingSelection = false
+            return
+        }
+
+        let seriesID = selection.seriesID
+        selectionError = nil
+
+        if let match = searchViewModel.results.first(where: { $0.id == seriesID }) {
+            selectedSeries = match
+            isResolvingSelection = false
+            return
+        }
+
+        if selectedSeries?.id == seriesID { return }
+
+        isResolvingSelection = true
+        defer { isResolvingSelection = false }
+
         do {
-            selectedSeries = try await FREDService.shared.getSeriesInfo(seriesId: favorite.id)
+            let series = try await FREDService.shared.getSeriesInfo(seriesId: seriesID)
+            guard !Task.isCancelled else { return }
+            selectedSeries = series
         } catch {
-            AppLogger.settings.error("Failed to load favorite \(favorite.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            guard !Task.isCancelled else { return }
+            selectedSeries = nil
+            selectionError = SearchViewModel.describe(error)
+            AppLogger.settings.error("Failed to open \(seriesID, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
     }
 }
@@ -64,24 +139,14 @@ private struct WorkspaceSidebarView: View {
     @ObservedObject var searchViewModel: SearchViewModel
     let favorites: [FavoriteSeries]
     let recentSearches: [String]
-    let onSelectSeries: (FREDSeries) -> Void
+    @Binding var selection: SidebarSelection?
     let onSelectRecentSearch: (String) -> Void
-    let onSelectFavorite: (FavoriteSeries) -> Void
     let onRefreshSearch: () -> Void
-    let onRemoveFavorite: (FavoriteSeries) -> Void
+    let onRemoveFavorite: (String) -> Void
     let onClearRecentSearches: () -> Void
 
     var body: some View {
-        List {
-            if !recentSearches.isEmpty {
-                Section("Recent Searches") {
-                    RecentSearchStrip(searches: recentSearches, onSelectSearch: onSelectRecentSearch)
-
-                    Button("Clear Recent Searches", role: .destructive, action: onClearRecentSearches)
-                        .font(.caption)
-                }
-            }
-
+        List(selection: $selection) {
             Section(searchResultsTitle) {
                 if searchViewModel.isLoading {
                     ProgressRow(label: "Searching FRED…")
@@ -92,18 +157,27 @@ private struct WorkspaceSidebarView: View {
                         message: errorMessage,
                         tint: .orange
                     )
-                } else if searchViewModel.results.isEmpty && searchViewModel.hasSearched {
-                    ContentUnavailableView.search(text: searchViewModel.query)
+                } else if searchViewModel.results.isEmpty, searchViewModel.hasSearched {
+                    InlineMessageRow(
+                        systemImage: "magnifyingglass",
+                        title: "No Matches",
+                        message: "No FRED series matched “\(searchViewModel.trimmedQuery)”. Try a broader term or a series ID.",
+                        tint: .secondary
+                    )
                 } else if searchViewModel.results.isEmpty {
                     SidebarPromptView(onSelectSearch: onSelectRecentSearch)
                 } else {
                     ForEach(searchViewModel.results) { series in
-                        Button {
-                            onSelectSeries(series)
-                        } label: {
-                            SeriesRowView(series: series)
-                        }
-                        .buttonStyle(.plain)
+                        SeriesRowView(series: series)
+                            .tag(SidebarSelection.result(series.id))
+                    }
+
+                    if searchViewModel.resultsAreCapped {
+                        Text(searchViewModel.resultLimitNotice)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 4)
                     }
                 }
             }
@@ -111,41 +185,52 @@ private struct WorkspaceSidebarView: View {
             if !favorites.isEmpty {
                 Section("Favorites") {
                     ForEach(favorites) { favorite in
-                        FavoriteRowView(
-                            favorite: favorite,
-                            onOpen: { onSelectFavorite(favorite) },
-                            onRemove: { onRemoveFavorite(favorite) }
-                        )
+                        FavoriteRowView(favorite: favorite, onRemove: { onRemoveFavorite(favorite.id) })
+                            .tag(SidebarSelection.favorite(favorite.id))
                     }
+                }
+            }
+
+            if !recentSearches.isEmpty {
+                Section("Recent Searches") {
+                    FlowingTagList(items: Array(recentSearches.prefix(8))) { search in
+                        Button(search) { onSelectRecentSearch(search) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                    .padding(.vertical, 4)
+
+                    Button("Clear Recent Searches", role: .destructive, action: onClearRecentSearches)
+                        .font(.caption)
                 }
             }
         }
         .listStyle(.sidebar)
-        .searchable(text: $searchViewModel.query, prompt: "Search economic data")
+        .searchable(text: $searchViewModel.query, placement: .sidebar, prompt: "Search economic data")
         .navigationTitle("FRED Ultra")
-        .frame(minWidth: 320)
+        .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 460)
+        .accessibilityIdentifier("sidebar.list")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: onRefreshSearch) {
                     Label("Refresh Search", systemImage: "arrow.clockwise")
                 }
-                .disabled(searchViewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || searchViewModel.isLoading)
+                .disabled(!searchViewModel.canRefresh)
+                .help("Run the current search again")
+                .accessibilityIdentifier("sidebar.refresh")
             }
 
             ToolbarItem(placement: .automatic) {
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }
+                .help("Open FRED Ultra settings")
             }
         }
     }
 
     private var searchResultsTitle: String {
-        if searchViewModel.results.isEmpty {
-            return "Search"
-        }
-
-        return "Results (\(searchViewModel.results.count))"
+        searchViewModel.results.isEmpty ? "Search" : "Results (\(searchViewModel.results.count))"
     }
 }
 
@@ -159,92 +244,97 @@ private struct WelcomeView: View {
     @State private var resultIsSuccess = false
 
     var body: some View {
-        VStack(spacing: 28) {
-            Spacer()
+        ScrollView {
+            VStack(spacing: 28) {
+                VStack(spacing: 14) {
+                    Image(systemName: "building.columns.circle.fill")
+                        .font(.system(size: 68))
+                        .foregroundStyle(.blue)
 
-            VStack(spacing: 14) {
-                Image(systemName: "building.columns.circle.fill")
-                    .font(.system(size: 68))
-                    .foregroundStyle(.blue)
+                    Text("FRED Ultra")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
 
-                Text("FRED Ultra")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    Text("A macOS research desk for exploring Federal Reserve time-series data.")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
 
-                Text("A macOS research desk for exploring Federal Reserve time-series data.")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Enter your free FRED API key to unlock search, comparison charts, transforms, and exports.")
+                        .font(.headline)
 
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Enter your free FRED API key to unlock search, comparison charts, exports, and economic analysis.")
-                    .font(.headline)
+                    HStack(alignment: .top, spacing: 12) {
+                        SecureField("FRED API Key", text: $apiKeyInput)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityIdentifier("welcome.apiKeyField")
+                            .onSubmit(testAndSaveAPIKey)
 
-                HStack(alignment: .top, spacing: 12) {
-                    SecureField("FRED API Key", text: $apiKeyInput)
-                        .textFieldStyle(.roundedBorder)
-
-                    Button(action: testAndSaveAPIKey) {
-                        if isTestingKey {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("Validate & Save")
+                        Button(action: testAndSaveAPIKey) {
+                            if isTestingKey {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("Validate & Save")
+                            }
                         }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTestingKey)
+                        .accessibilityIdentifier("welcome.validateButton")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isTestingKey)
+
+                    if let resultMessage {
+                        Label(resultMessage, systemImage: resultIsSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundStyle(resultIsSuccess ? .green : .red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("What you can do once connected")
+                            .font(.subheadline.weight(.semibold))
+
+                        Label("Search across thousands of FRED series", systemImage: "magnifyingglass")
+                        Label("Compare series with index, growth, and year-over-year views", systemImage: "chart.xyaxis.line")
+                        Label("Review data tables, statistics, and correlation insights", systemImage: "chart.bar.doc.horizontal")
+                        Label("Export exactly what you see as CSV or JSON", systemImage: "square.and.arrow.up")
+                    }
+                    .font(.callout)
+
+                    Link("Get a free API key from FRED", destination: URL(string: "https://fred.stlouisfed.org/docs/api/api_key.html")!)
+                        .font(.callout.weight(.medium))
                 }
-
-                if let resultMessage {
-                    Label(resultMessage, systemImage: resultIsSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundStyle(resultIsSuccess ? .green : .red)
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("What you can do once connected")
-                        .font(.subheadline.weight(.semibold))
-
-                    Label("Search across thousands of FRED series", systemImage: "magnifyingglass")
-                    Label("Compare multiple series with rebased chart mode", systemImage: "chart.xyaxis.line")
-                    Label("Review data tables, key statistics, and insight cards", systemImage: "chart.bar.doc.horizontal")
-                    Label("Export observations as CSV or JSON", systemImage: "square.and.arrow.up")
-                }
-                .font(.callout)
-
-                Link("Get a free API key from FRED", destination: URL(string: "https://fred.stlouisfed.org/docs/api/api_key.html")!)
-                    .font(.callout.weight(.medium))
+                .padding(24)
+                .frame(maxWidth: 620)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
-            .padding(24)
-            .frame(maxWidth: 620)
-            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-            Spacer()
+            .padding(32)
+            .frame(maxWidth: .infinity)
         }
-        .padding(32)
-        .frame(minWidth: 760, minHeight: 560)
+        .frame(minWidth: 640, minHeight: 520)
     }
 
     private func testAndSaveAPIKey() {
+        let candidate = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty, !isTestingKey else { return }
+
         isTestingKey = true
         resultMessage = nil
 
         Task {
+            defer { isTestingKey = false }
+
             do {
-                try await FREDService.shared.validateAPIKey(apiKeyInput)
-                settings.updateAPIKey(apiKeyInput)
+                try await FREDService.shared.validateAPIKey(candidate)
+                let storage = settings.updateAPIKey(candidate)
                 resultIsSuccess = true
-                resultMessage = "API key validated. Opening your workspace…"
-                AppLogger.settings.info("Validated and saved a FRED API key")
+                resultMessage = "API key validated. \(storage.explanation)"
+                AppLogger.settings.info("Validated and saved a FRED API key (\(storage.rawValue, privacy: .public))")
             } catch {
                 resultIsSuccess = false
-                resultMessage = error.localizedDescription
+                resultMessage = SearchViewModel.describe(error)
                 AppLogger.settings.error("API key validation failed: \(error.localizedDescription, privacy: .public)")
             }
-
-            isTestingKey = false
         }
     }
 }
@@ -262,15 +352,16 @@ private struct WorkspaceLandingView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Economic Research Desk")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text("Search the sidebar to load a FRED series, compare indicators, and inspect the latest changes, range position, and annualized drift.")
+                    Text("Search in the sidebar to open a FRED series, then compare indicators, switch between levels and growth rates, and inspect range position, volatility, and annualized drift.")
                         .font(.title3)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 16) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
                     LandingCard(title: "Favorites", value: "\(favoritesCount)", detail: "Pinned series ready to reopen", symbol: "star.fill", tint: .yellow)
                     LandingCard(title: "Recent Searches", value: "\(recentSearches.count)", detail: "Queries available for one-click reuse", symbol: "clock.arrow.circlepath", tint: .blue)
-                    LandingCard(title: "Exports", value: "CSV / JSON", detail: "Export current observations or copy them directly", symbol: "square.and.arrow.up", tint: .green)
+                    LandingCard(title: "Exports", value: "CSV / JSON", detail: "Export or copy exactly what the chart shows", symbol: "square.and.arrow.up", tint: .green)
                 }
 
                 if !recentSearches.isEmpty {
@@ -279,22 +370,21 @@ private struct WorkspaceLandingView: View {
                             .font(.headline)
 
                         FlowingTagList(items: recentSearches) { search in
-                            Button(search) {
-                                onUseRecentSearch(search)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                            Button(search) { onUseRecentSearch(search) }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                         }
                     }
                 }
 
-                GroupBox("Shipped in this overhaul") {
+                GroupBox("Working with the data") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("Stable sidebar-to-detail macOS workflow", systemImage: "sidebar.leading")
-                        Label("Honest multi-series comparison using rebased charts", systemImage: "chart.line.uptrend.xyaxis")
-                        Label("Richer insight cards including period change and annualized drift", systemImage: "waveform.path.ecg.rectangle")
-                        Label("Unified logging around search, settings, detail loading, and export actions", systemImage: "text.append")
+                        Label("Date windows are measured from each series' own latest observation, so discontinued series still chart correctly.", systemImage: "calendar")
+                        Label("Transforms (Change, % Change, YoY, Index) are computed on full history, so the first visible point is never a partial calculation.", systemImage: "function")
+                        Label("Series with different units are compared as indexes rather than pretending the raw values share an axis.", systemImage: "equal.square")
+                        Label("Every export and clipboard copy contains the window, transform, and units it was produced with.", systemImage: "doc.text")
                     }
+                    .font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
                 }
@@ -313,10 +403,8 @@ private struct ProgressRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ProgressView()
-                .controlSize(.small)
-            Text(label)
-                .foregroundStyle(.secondary)
+            ProgressView().controlSize(.small)
+            Text(label).foregroundStyle(.secondary)
         }
         .padding(.vertical, 6)
     }
@@ -336,6 +424,7 @@ private struct InlineMessageRow: View {
             Text(message)
                 .foregroundStyle(.secondary)
                 .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 8)
     }
@@ -344,7 +433,7 @@ private struct InlineMessageRow: View {
 private struct SidebarPromptView: View {
     let onSelectSearch: (String) -> Void
 
-    private let suggestions = ["GDP", "UNRATE", "CPI", "DGS10", "PAYEMS"]
+    private let suggestions = ["GDP", "UNRATE", "CPIAUCSL", "DGS10", "PAYEMS", "FEDFUNDS"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -352,59 +441,39 @@ private struct SidebarPromptView: View {
                 .font(.headline)
             Text("Search by series ID, indicator name, or theme.")
                 .foregroundStyle(.secondary)
+                .font(.callout)
             FlowingTagList(items: suggestions) { suggestion in
-                Button(suggestion) {
-                    onSelectSearch(suggestion)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                Button(suggestion) { onSelectSearch(suggestion) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
             }
         }
         .padding(.vertical, 8)
     }
 }
 
-private struct RecentSearchStrip: View {
-    let searches: [String]
-    let onSelectSearch: (String) -> Void
-
-    var body: some View {
-        FlowingTagList(items: Array(searches.prefix(6))) { search in
-            Button(search) {
-                onSelectSearch(search)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
 private struct FavoriteRowView: View {
     let favorite: FavoriteSeries
-    let onOpen: () -> Void
     let onRemove: () -> Void
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "star.fill")
-                    .foregroundStyle(.yellow)
-                    .padding(.top, 2)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "star.fill")
+                .foregroundStyle(.yellow)
+                .padding(.top, 2)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(favorite.title)
-                        .lineLimit(2)
-                    Text("\(favorite.id) • \(favorite.frequency)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
+            VStack(alignment: .leading, spacing: 4) {
+                Text(favorite.title)
+                    .lineLimit(2)
+                Text("\(favorite.id) • \(favorite.frequency)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .contentShape(Rectangle())
+
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
         .contextMenu {
             Button("Remove Favorite", role: .destructive, action: onRemove)
         }
@@ -429,9 +498,9 @@ struct SeriesRowView: View {
                         .lineLimit(1)
                 }
 
-                Spacer()
+                Spacer(minLength: 0)
 
-                if settings.isFavorite(series) {
+                if settings.isFavorite(series.id) {
                     Image(systemName: "star.fill")
                         .foregroundStyle(.yellow)
                         .font(.caption)
@@ -462,12 +531,8 @@ struct SeriesRowView: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .contextMenu {
-            Button(settings.isFavorite(series) ? "Remove from Favorites" : "Add to Favorites") {
-                if settings.isFavorite(series) {
-                    settings.removeFavorite(series)
-                } else {
-                    settings.addFavorite(series)
-                }
+            Button(settings.isFavorite(series.id) ? "Remove from Favorites" : "Add to Favorites") {
+                settings.toggleFavorite(series)
             }
 
             Button("Copy Series ID") {
@@ -500,6 +565,7 @@ private struct LandingCard: View {
             Text(detail)
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
@@ -507,12 +573,12 @@ private struct LandingCard: View {
     }
 }
 
-private struct FlowingTagList<Item: Hashable, Content: View>: View {
+struct FlowingTagList<Item: Hashable, Content: View>: View {
     let items: [Item]
     @ViewBuilder let content: (Item) -> Content
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 90), alignment: .leading)], alignment: .leading, spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), alignment: .leading)], alignment: .leading, spacing: 8) {
             ForEach(items, id: \.self) { item in
                 content(item)
             }

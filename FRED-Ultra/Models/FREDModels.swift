@@ -1,22 +1,52 @@
 import Foundation
 
+// MARK: - Shared Date Handling
+
+/// FRED serialises observation dates as `yyyy-MM-dd` with no time component.
+///
+/// Everything in the app parses *and* displays those dates in the same calendar
+/// (`Calendar.current`), so a date never drifts to the neighbouring day when a chart
+/// axis, a table cell, and a filter each render it.
+enum FREDDate {
+    /// `DateFormatter` is documented as thread-safe on macOS 10.9+ and is `Sendable`,
+    /// so these are shared rather than reallocated per observation.
+    private static let storageFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        return formatter
+    }()
+
+    private static let displayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
+    static func date(from string: String) -> Date? {
+        storageFormatter.date(from: string)
+    }
+
+    static func string(from date: Date) -> String {
+        storageFormatter.string(from: date)
+    }
+
+    static func displayString(from date: Date) -> String {
+        displayFormatter.string(from: date)
+    }
+}
+
 // MARK: - Search Response
 
-struct FREDSearchResponse: Codable {
-    let realtimeStart: String?
-    let realtimeEnd: String?
-    let orderBy: String?
-    let sortOrder: String?
+struct FREDSearchResponse: Codable, Sendable {
     let count: Int?
     let offset: Int?
     let limit: Int?
     let series: [FREDSeries]
 
     enum CodingKeys: String, CodingKey {
-        case realtimeStart = "realtime_start"
-        case realtimeEnd = "realtime_end"
-        case orderBy = "order_by"
-        case sortOrder = "sort_order"
         case count, offset, limit
         case series = "seriess"
     }
@@ -24,7 +54,12 @@ struct FREDSearchResponse: Codable {
 
 // MARK: - Series
 
-struct FREDSeries: Codable, Identifiable, Hashable {
+/// Metadata for one FRED series.
+///
+/// Decoding is deliberately forgiving: FRED occasionally omits optional descriptive
+/// fields on less-curated series, and a single missing key must not discard an entire
+/// page of search results.
+struct FREDSeries: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let observationStart: String
@@ -54,584 +89,250 @@ struct FREDSeries: Codable, Identifiable, Hashable {
         case notes
     }
 
+    init(
+        id: String,
+        title: String,
+        observationStart: String,
+        observationEnd: String,
+        frequency: String,
+        frequencyShort: String? = nil,
+        units: String,
+        unitsShort: String? = nil,
+        seasonalAdjustment: String,
+        seasonalAdjustmentShort: String? = nil,
+        lastUpdated: String,
+        popularity: Int? = nil,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.observationStart = observationStart
+        self.observationEnd = observationEnd
+        self.frequency = frequency
+        self.frequencyShort = frequencyShort
+        self.units = units
+        self.unitsShort = unitsShort
+        self.seasonalAdjustment = seasonalAdjustment
+        self.seasonalAdjustmentShort = seasonalAdjustmentShort
+        self.lastUpdated = lastUpdated
+        self.popularity = popularity
+        self.notes = notes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? id
+        observationStart = try container.decodeIfPresent(String.self, forKey: .observationStart) ?? ""
+        observationEnd = try container.decodeIfPresent(String.self, forKey: .observationEnd) ?? ""
+        frequency = try container.decodeIfPresent(String.self, forKey: .frequency) ?? "Unknown"
+        frequencyShort = try container.decodeIfPresent(String.self, forKey: .frequencyShort)
+        units = try container.decodeIfPresent(String.self, forKey: .units) ?? ""
+        unitsShort = try container.decodeIfPresent(String.self, forKey: .unitsShort)
+        seasonalAdjustment = try container.decodeIfPresent(String.self, forKey: .seasonalAdjustment) ?? "Not Applicable"
+        seasonalAdjustmentShort = try container.decodeIfPresent(String.self, forKey: .seasonalAdjustmentShort)
+        lastUpdated = try container.decodeIfPresent(String.self, forKey: .lastUpdated) ?? ""
+        popularity = try container.decodeIfPresent(Int.self, forKey: .popularity)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+    }
+
     var formattedDateRange: String {
-        "\(observationStart) to \(observationEnd)"
+        guard !observationStart.isEmpty, !observationEnd.isEmpty else { return "Unknown coverage" }
+        return "\(observationStart) to \(observationEnd)"
     }
 
     var subtitleLine: String {
-        "\(frequency) • \(units)"
+        let unitText = units.isEmpty ? "Units n/a" : units
+        return "\(frequency) • \(unitText)"
     }
 
+    var unitDescriptor: UnitDescriptor {
+        .cached(units: units)
+    }
+
+    var seriesFrequency: SeriesFrequency {
+        SeriesFrequency.parse(short: frequencyShort, long: frequency)
+    }
+
+    /// Notes trimmed to a single sidebar-friendly paragraph.
     var shortNotes: String? {
-        guard let notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
+        guard let notes else { return nil }
 
-        if notes.count <= 180 {
-            return notes
-        }
+        let collapsed = notes
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return String(notes.prefix(177)) + "..."
+        guard !collapsed.isEmpty else { return nil }
+        guard collapsed.count > 180 else { return collapsed }
+
+        return String(collapsed.prefix(177)) + "…"
     }
 }
 
 // MARK: - Observations Response
 
-struct FREDObservationsResponse: Codable {
-    let realtimeStart: String?
-    let realtimeEnd: String?
-    let observationStart: String?
-    let observationEnd: String?
-    let units: String?
-    let outputType: Int?
-    let fileType: String?
-    let orderBy: String?
-    let sortOrder: String?
+struct FREDObservationsResponse: Codable, Sendable {
     let count: Int?
     let offset: Int?
     let limit: Int?
     let observations: [FREDObservation]
-
-    enum CodingKeys: String, CodingKey {
-        case realtimeStart = "realtime_start"
-        case realtimeEnd = "realtime_end"
-        case observationStart = "observation_start"
-        case observationEnd = "observation_end"
-        case units
-        case outputType = "output_type"
-        case fileType = "file_type"
-        case orderBy = "order_by"
-        case sortOrder = "sort_order"
-        case count, offset, limit
-        case observations
-    }
 }
 
 // MARK: - Observation
 
-struct FREDObservation: Codable, Identifiable, Hashable {
+/// A raw FRED observation. `value` stays a `String` because FRED encodes missing
+/// readings as `"."`, which is not representable as a number.
+struct FREDObservation: Codable, Identifiable, Hashable, Sendable {
     var id: String { date }
 
-    let realtimeStart: String?
-    let realtimeEnd: String?
     let date: String
     let value: String
 
-    enum CodingKeys: String, CodingKey {
-        case realtimeStart = "realtime_start"
-        case realtimeEnd = "realtime_end"
-        case date, value
+    init(date: String, value: String) {
+        self.date = date
+        self.value = value
     }
-
-    private static let storageDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter
-    }()
-
-    private static let displayDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter
-    }()
 
     var doubleValue: Double? {
         Double(value)
     }
 
     var isValidValue: Bool {
-        value != "." && doubleValue != nil
+        guard let doubleValue else { return false }
+        return doubleValue.isFinite
     }
 
     var dateObject: Date? {
-        Self.storageDateFormatter.date(from: date)
+        FREDDate.date(from: date)
     }
 
     var formattedDate: String {
         guard let dateObject else { return date }
-        return Self.displayDateFormatter.string(from: dateObject)
+        return FREDDate.displayString(from: dateObject)
     }
 
-    var formattedValue: String {
-        guard let doubleValue else { return value }
-        return ObservationRow.defaultNumberFormatter.string(from: NSNumber(value: doubleValue)) ?? value
+    /// Parsed representation, or `nil` when the observation is missing or malformed.
+    var dataPoint: SeriesDataPoint? {
+        guard let dateObject, let doubleValue, doubleValue.isFinite else { return nil }
+        return SeriesDataPoint(date: dateObject, value: doubleValue)
     }
 }
 
-// MARK: - Chart Data
+// MARK: - Parsed Observation
 
-struct ChartDataPoint: Identifiable, Hashable {
-    var id: String { "\(seriesId)-\(date.timeIntervalSince1970)" }
-
-    let seriesId: String
-    let seriesTitle: String
+/// Fully parsed observation used by every analytics and charting path.
+///
+/// Parsing once, at the service boundary, keeps date parsing and `Double` conversion
+/// out of view-update hot paths.
+struct SeriesDataPoint: Hashable, Sendable {
     let date: Date
     let value: Double
 
-    init?(observation: FREDObservation, seriesId: String, seriesTitle: String) {
-        guard let date = observation.dateObject,
-              let value = observation.doubleValue else {
-            return nil
-        }
-
-        self.seriesId = seriesId
-        self.seriesTitle = seriesTitle
-        self.date = date
-        self.value = value
-    }
-
-    init(seriesId: String, seriesTitle: String, date: Date, value: Double) {
-        self.seriesId = seriesId
-        self.seriesTitle = seriesTitle
+    init(date: Date, value: Double) {
         self.date = date
         self.value = value
     }
 }
 
-// MARK: - Table Row
+extension Array where Element == FREDObservation {
+    /// Parsed, chronologically sorted points with missing readings dropped.
+    func parsedDataPoints() -> [SeriesDataPoint] {
+        compactMap(\.dataPoint).sorted { $0.date < $1.date }
+    }
+}
 
-struct ObservationRow: Identifiable, Hashable {
-    static let defaultNumberFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
-        return formatter
-    }()
+// MARK: - Frequency
 
-    let id: String
-    let date: String
-    let dateObject: Date?
-    let value: String
-    let numericValue: Double?
-    let formattedDate: String
-    let formattedValue: String
-    let units: String
+/// Reporting cadence of a series, used to size moving-average windows and to explain
+/// what "one period" means in period-over-period transforms.
+enum SeriesFrequency: String, Sendable, Equatable, CaseIterable {
+    case daily
+    case weekly
+    case biweekly
+    case monthly
+    case quarterly
+    case semiannual
+    case annual
+    case unknown
 
-    init(observation: FREDObservation, units: String = "") {
-        id = observation.id
-        date = observation.date
-        dateObject = observation.dateObject
-        value = observation.value
-        numericValue = observation.doubleValue
-        formattedDate = observation.formattedDate
-        self.units = units
+    static func parse(short: String?, long: String) -> SeriesFrequency {
+        let shortCode = short?.trimmingCharacters(in: .whitespaces).uppercased() ?? ""
 
-        if let numericValue {
-            formattedValue = ValueFormatter(units: units).formatValue(numericValue, compact: false)
-        } else {
-            formattedValue = observation.value
+        switch shortCode {
+        case "D": return .daily
+        case "W": return .weekly
+        case "BW": return .biweekly
+        case "M": return .monthly
+        case "Q": return .quarterly
+        case "SA": return .semiannual
+        case "A": return .annual
+        default: break
+        }
+
+        let normalized = long.lowercased()
+        if normalized.contains("daily") { return .daily }
+        if normalized.contains("biweekly") || normalized.contains("bi-weekly") { return .biweekly }
+        if normalized.contains("weekly") { return .weekly }
+        if normalized.contains("monthly") { return .monthly }
+        if normalized.contains("quarterly") { return .quarterly }
+        if normalized.contains("semiannual") || normalized.contains("semi-annual") { return .semiannual }
+        if normalized.contains("annual") || normalized.contains("yearly") { return .annual }
+        return .unknown
+    }
+
+    /// Approximate observations per calendar year. `nil` when the cadence is unknown.
+    var periodsPerYear: Int? {
+        switch self {
+        case .daily: return 252
+        case .weekly: return 52
+        case .biweekly: return 26
+        case .monthly: return 12
+        case .quarterly: return 4
+        case .semiannual: return 2
+        case .annual: return 1
+        case .unknown: return nil
+        }
+    }
+
+    var periodNoun: String {
+        switch self {
+        case .daily: return "day"
+        case .weekly: return "week"
+        case .biweekly: return "two weeks"
+        case .monthly: return "month"
+        case .quarterly: return "quarter"
+        case .semiannual: return "half-year"
+        case .annual: return "year"
+        case .unknown: return "period"
         }
     }
 }
 
 // MARK: - Favorites
 
-struct FavoriteSeries: Codable, Identifiable, Hashable {
+struct FavoriteSeries: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let units: String
     let frequency: String
     let addedDate: Date
 
-    init(from series: FREDSeries) {
-        id = series.id
-        title = series.title
-        units = series.units
-        frequency = series.frequency
-        addedDate = Date()
-    }
-}
-
-// MARK: - Date Range Filter
-
-enum DateRangeOption: String, CaseIterable, Identifiable {
-    case all = "All Time"
-    case oneMonth = "1 Month"
-    case threeMonths = "3 Months"
-    case sixMonths = "6 Months"
-    case oneYear = "1 Year"
-    case fiveYears = "5 Years"
-    case tenYears = "10 Years"
-    case twentyYears = "20 Years"
-
-    var id: String { rawValue }
-
-    var startDate: Date? {
-        let calendar = Calendar.current
-        let now = Date()
-
-        switch self {
-        case .all:
-            return nil
-        case .oneMonth:
-            return calendar.date(byAdding: .month, value: -1, to: now)
-        case .threeMonths:
-            return calendar.date(byAdding: .month, value: -3, to: now)
-        case .sixMonths:
-            return calendar.date(byAdding: .month, value: -6, to: now)
-        case .oneYear:
-            return calendar.date(byAdding: .year, value: -1, to: now)
-        case .fiveYears:
-            return calendar.date(byAdding: .year, value: -5, to: now)
-        case .tenYears:
-            return calendar.date(byAdding: .year, value: -10, to: now)
-        case .twentyYears:
-            return calendar.date(byAdding: .year, value: -20, to: now)
-        }
-    }
-}
-
-// MARK: - Export Format
-
-enum ExportFormat: String, CaseIterable, Identifiable {
-    case csv = "CSV"
-    case json = "JSON"
-
-    var id: String { rawValue }
-
-    var fileExtension: String {
-        switch self {
-        case .csv:
-            return "csv"
-        case .json:
-            return "json"
-        }
-    }
-
-    var contentType: String {
-        switch self {
-        case .csv:
-            return "text/csv"
-        case .json:
-            return "application/json"
-        }
-    }
-}
-
-// MARK: - Unit Parsing
-
-enum UnitFamily: String, Equatable {
-    case currency
-    case percent
-    case index
-    case persons
-    case generic
-}
-
-enum CurrencyBasis: Equatable {
-    case nominal
-    case chained(year: Int?)
-    case real(year: Int?)
-}
-
-struct UnitDescriptor: Equatable {
-    let rawUnits: String
-    let family: UnitFamily
-    let scale: Double
-    let canonicalUnits: String
-    let currencyBasis: CurrencyBasis?
-
-    init(units: String) {
-        rawUnits = units
-
-        let normalized = Self.normalize(units)
-        scale = Self.parseScale(from: normalized)
-
-        if normalized.contains("percent") {
-            family = .percent
-            canonicalUnits = "Percent"
-            currencyBasis = nil
-            return
-        }
-
-        if normalized.contains("index") {
-            family = .index
-            canonicalUnits = "Index"
-            currencyBasis = nil
-            return
-        }
-
-        if normalized.contains("person") || normalized.contains("persons") || normalized.contains("people") || normalized.contains("employee") {
-            family = .persons
-            canonicalUnits = "Persons"
-            currencyBasis = nil
-            return
-        }
-
-        if normalized.contains("dollar") {
-            family = .currency
-            let basis = Self.parseCurrencyBasis(from: normalized)
-            currencyBasis = basis
-            canonicalUnits = Self.canonicalCurrencyUnits(for: basis)
-            return
-        }
-
-        family = .generic
-        canonicalUnits = Self.canonicalGenericUnits(from: normalized, fallback: units)
-        currencyBasis = nil
-    }
-
-    var appliesScaleConversion: Bool {
-        abs(scale - 1) > 0.000_000_1
-    }
-
-    func convertedValue(_ rawValue: Double) -> Double {
-        rawValue * scale
-    }
-
-    func isComparable(to other: UnitDescriptor) -> Bool {
-        guard family == other.family else { return false }
-
-        switch family {
-        case .currency:
-            return canonicalUnits == other.canonicalUnits
-        case .percent, .index, .persons:
-            return true
-        case .generic:
-            return canonicalUnits == other.canonicalUnits
-        }
-    }
-
-    private static func normalize(_ units: String) -> String {
-        units
-            .lowercased()
-            .replacingOccurrences(of: ".", with: "")
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: ",", with: " ")
-    }
-
-    private static func parseScale(from normalized: String) -> Double {
-        if normalized.contains("trillion") { return 1_000_000_000_000 }
-        if normalized.contains("billion") { return 1_000_000_000 }
-        if normalized.contains("million") { return 1_000_000 }
-        if normalized.contains("thousand") { return 1_000 }
-        return 1
-    }
-
-    private static func parseCurrencyBasis(from normalized: String) -> CurrencyBasis {
-        if normalized.contains("chained") {
-            return .chained(year: extractYear(from: normalized))
-        }
-
-        if normalized.contains("real") || normalized.contains("constant") {
-            return .real(year: extractYear(from: normalized))
-        }
-
-        return .nominal
-    }
-
-    private static func canonicalCurrencyUnits(for basis: CurrencyBasis) -> String {
-        switch basis {
-        case .nominal:
-            return "U.S. Dollars"
-        case .chained(let year):
-            if let year {
-                return "Chained \(year) Dollars"
-            }
-            return "Chained Dollars"
-        case .real(let year):
-            if let year {
-                return "Real \(year) Dollars"
-            }
-            return "Real Dollars"
-        }
-    }
-
-    private static func extractYear(from normalized: String) -> Int? {
-        let tokens = normalized.split(whereSeparator: { !$0.isNumber })
-        return tokens.compactMap { token -> Int? in
-            guard token.count == 4 else { return nil }
-            return Int(token)
-        }.first
-    }
-
-    private static func canonicalGenericUnits(from normalized: String, fallback: String) -> String {
-        let filtered = normalized
-            .split(separator: " ")
-            .filter { token in
-                !["thousand", "thousands", "million", "millions", "billion", "billions", "trillion", "trillions", "of"].contains(String(token))
-            }
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !filtered.isEmpty else { return fallback }
-        return filtered
-            .split(separator: " ")
-            .map { token in token.prefix(1).uppercased() + token.dropFirst() }
-            .joined(separator: " ")
-    }
-}
-
-// MARK: - Formatting Helpers
-
-struct ValueFormatter {
-    let units: String
-
-    private var descriptor: UnitDescriptor {
-        UnitDescriptor(units: units)
-    }
-
-    func formatValue(_ value: Double, compact: Bool) -> String {
-        if descriptor.family == .percent {
-            return String(format: "%.2f%%", value)
-        }
-
-        let scaledValue = descriptor.convertedValue(value)
-
-        if descriptor.family == .currency {
-            return formatCurrency(scaledValue, compact: compact)
-        }
-
-        if descriptor.family == .index {
-            return compact ? String(format: "%.1f", scaledValue) : String(format: "%.2f", scaledValue)
-        }
-
-        return formatDecimal(scaledValue, compact: compact)
-    }
-
-    func formatAxisValue(_ value: Double) -> String {
-        if descriptor.family == .percent {
-            return String(format: "%.1f%%", value)
-        }
-
-        let scaledValue = descriptor.convertedValue(value)
-
-        if descriptor.family == .currency {
-            return formatCurrency(scaledValue, compact: true)
-        }
-
-        return formatDecimal(scaledValue, compact: true)
-    }
-
-    private func formatCurrency(_ value: Double, compact: Bool) -> String {
-        if compact || abs(value) >= 1_000_000 {
-            switch abs(value) {
-            case 1_000_000_000_000...:
-                return String(format: "$%.1fT", value / 1_000_000_000_000)
-            case 1_000_000_000...:
-                return String(format: "$%.1fB", value / 1_000_000_000)
-            case 1_000_000...:
-                return String(format: "$%.1fM", value / 1_000_000)
-            case 1_000...:
-                return String(format: "$%.1fK", value / 1_000)
-            default:
-                break
-            }
-        }
-
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencySymbol = "$"
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? "$\(value)"
-    }
-
-    private func formatDecimal(_ value: Double, compact: Bool) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = compact ? 1 : 2
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? String(format: compact ? "%.1f" : "%.2f", value)
-    }
-}
-
-// MARK: - Statistics
-
-struct SeriesStatistics: Equatable {
-    let count: Int
-    let min: Double
-    let max: Double
-    let mean: Double
-    let median: Double
-    let standardDeviation: Double
-    let latestValue: Double
-    let latestChange: Double
-    let latestPercentChange: Double
-    let firstValue: Double
-    let totalChange: Double
-    let annualizedChange: Double
-    let range: Double
-    let units: String
-
-    init(
-        count: Int,
-        min: Double,
-        max: Double,
-        mean: Double,
-        median: Double,
-        standardDeviation: Double,
-        latestValue: Double,
-        latestChange: Double,
-        latestPercentChange: Double,
-        firstValue: Double = 0,
-        totalChange: Double = 0,
-        annualizedChange: Double = 0,
-        range: Double? = nil,
-        units: String = ""
-    ) {
-        self.count = count
-        self.min = min
-        self.max = max
-        self.mean = mean
-        self.median = median
-        self.standardDeviation = standardDeviation
-        self.latestValue = latestValue
-        self.latestChange = latestChange
-        self.latestPercentChange = latestPercentChange
-        self.firstValue = firstValue == 0 ? min : firstValue
-        self.totalChange = totalChange == 0 ? latestValue - (firstValue == 0 ? min : firstValue) : totalChange
-        self.annualizedChange = annualizedChange
-        self.range = range ?? (max - min)
+    init(id: String, title: String, units: String, frequency: String, addedDate: Date = Date()) {
+        self.id = id
+        self.title = title
         self.units = units
+        self.frequency = frequency
+        self.addedDate = addedDate
     }
 
-    private var formatter: ValueFormatter {
-        ValueFormatter(units: units)
+    init(from series: FREDSeries, addedDate: Date = Date()) {
+        self.init(
+            id: series.id,
+            title: series.title,
+            units: series.units,
+            frequency: series.frequency,
+            addedDate: addedDate
+        )
     }
-
-    var formattedMin: String { formatter.formatValue(min, compact: true) }
-    var formattedMax: String { formatter.formatValue(max, compact: true) }
-    var formattedMean: String { formatter.formatValue(mean, compact: true) }
-    var formattedMedian: String { formatter.formatValue(median, compact: true) }
-    var formattedStdDev: String { formatNumber(standardDeviation) }
-    var formattedLatestValue: String { formatter.formatValue(latestValue, compact: true) }
-    var formattedRange: String { formatter.formatValue(range, compact: true) }
-    var formattedTotalChange: String { signed(formatter.formatValue(totalChange, compact: true), value: totalChange) }
-    var formattedAnnualizedChange: String { String(format: "%.2f%% / yr", annualizedChange) }
-
-    var formattedLatestChange: String {
-        signed(formatter.formatValue(latestChange, compact: true), value: latestChange)
-    }
-
-    var formattedPercentChange: String {
-        signed(String(format: "%.2f%%", abs(latestPercentChange)), value: latestPercentChange)
-    }
-
-    private func formatNumber(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
-    }
-
-    private func signed(_ string: String, value: Double) -> String {
-        let unsignedString = string.hasPrefix("-") ? String(string.dropFirst()) : string
-        if value > 0 { return "+\(unsignedString)" }
-        if value < 0 { return "-\(unsignedString)" }
-        return unsignedString
-    }
-}
-
-struct SeriesInsight: Identifiable, Hashable {
-    let id = UUID()
-    let title: String
-    let value: String
-    let detail: String
-    let symbol: String
 }

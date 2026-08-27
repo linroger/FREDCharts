@@ -1,32 +1,33 @@
-# FREDCharts
+# FRED Ultra
 
-A native macOS desktop app for searching, comparing, and exporting Federal Reserve Economic Data (FRED) time-series. Built with SwiftUI and Swift Charts.
-
-![FRED Ultra Overview](FRED-Ultra%202026-04-14%20at%2020.20.27@2x.png)
+A native macOS desktop app for searching, comparing, transforming, and exporting Federal Reserve Economic Data (FRED) time series. Built with SwiftUI and Swift Charts.
 
 ---
 
 ## 功能简介 | About
 
-**FRED Ultra** 是一款专为经济研究设计的 macOS 原生桌面应用，可搜索、对比和导出圣路易斯美联储银行（St. Louis Fed）的 FRED 经济数据集。
+**FRED Ultra** 是一款专为经济研究设计的 macOS 原生桌面应用，可搜索、对比、变换和导出圣路易斯联储（St. Louis Fed）的 FRED 经济数据。
 
 ### 主要功能 | Key Features
 
-- **首次使用引导** — 输入并验证 FRED API Key，解锁完整功能
-- **经济数据搜索** — 支持防抖搜索、近期查询和收藏序列
-- **序列详情仪表板** — 包含关键指标（最新值、变化、期间变化、年化漂移）、交互式图表、原始观测数据表和洞察卡片
-- **多序列对比** — 对比模式下可将不同单位的序列统一基准为 100，便于诚实比较
-- **数据导出** — 支持 CSV 和 JSON 格式导出
-- **剪贴板复制** — 一键复制可见数据
-- **统一日志** — 覆盖搜索、详情加载、导出和收藏操作的日志记录
+| 功能 | 说明 |
+|------|------|
+| **API Key 引导** | 首次启动验证 FRED API Key，验证通过后保存至 macOS 钥匙串（Keychain） |
+| **经济数据搜索** | 防抖搜索、结果高亮选中、近期查询与收藏序列 |
+| **序列详情** | 关键指标、交互式图表、原始观测表、洞察卡片三个标签页 |
+| **数据变换** | Level / Change / % Change / YoY % / Index (Start = 100) 五种变换 |
+| **趋势线** | 可选的移动平均叠加线，窗口长度随数据频率自动缩放 |
+| **多序列对比** | 单位兼容时统一量纲；单位不兼容时自动切换为指数化对比，并计算相关系数 |
+| **数据导出** | CSV / JSON 导出与剪贴板复制，内容与屏幕所见完全一致 |
+| **统一日志** | 覆盖搜索、详情加载、网络、导出与设置操作 |
 
 ---
 
 ## 系统要求 | Requirements
 
 - macOS 15 (Sequoia) 或更新版本
-- Xcode 16 或更新版本（本地开发）
-- 免费 FRED API Key： [申请地址](https://fred.stlouisfed.org/docs/api/api_key.html)
+- Xcode 16 或更新版本（本地开发；项目使用 Swift 6 语言模式）
+- 免费 FRED API Key：[申请地址](https://fred.stlouisfed.org/docs/api/api_key.html)
 
 ---
 
@@ -36,24 +37,33 @@ A native macOS desktop app for searching, comparing, and exporting Federal Reser
 FRED-Ultra/
 ├── FRED-Ultra/
 │   ├── Models/
-│   │   └── FREDModels.swift          # 数据模型、展示模型、格式化工具
+│   │   ├── FREDModels.swift        # API DTO、日期处理、频率、收藏
+│   │   ├── Units.swift             # 单位解析与数值格式化
+│   │   ├── Analytics.swift         # 变换、统计、相关性、降采样
+│   │   └── DisplayModels.swift     # 时间窗口、变换、图表点、表格行
 │   ├── Services/
-│   │   └── FREDService.swift          # API 服务、设置管理、导出服务
+│   │   ├── FREDService.swift       # API 客户端、缓存、重试
+│   │   ├── SettingsManager.swift   # 凭据、收藏、近期搜索
+│   │   └── ExportService.swift     # CSV / JSON / 剪贴板 / 保存面板
 │   ├── Support/
-│   │   └── AppLogger.swift            # 统一日志基础设施
+│   │   ├── AppLogger.swift         # 统一日志分类
+│   │   ├── KeychainStore.swift     # 钥匙串读写
+│   │   └── AppCommandCenter.swift  # 菜单命令与详情页的桥接
 │   ├── ViewModels/
-│   │   ├── SearchViewModel.swift      # 搜索生命周期与状态
-│   │   └── SeriesDetailViewModel.swift # 观测数据、对比、统计、导出
+│   │   ├── SearchViewModel.swift
+│   │   └── SeriesDetailViewModel.swift
 │   ├── Views/
-│   │   ├── SeriesDetailView.swift     # 序列详情界面（概览/数据/洞察）
-│   │   └── SettingsView.swift         # API Key 验证与本地数据管理
-│   ├── ContentView.swift              # 根视图：引导/侧边栏/详情工作区
-│   └── FRED_UltraApp.swift            # 应用入口、菜单命令、生命周期
-├── FRED-UltraTests/                    # 单元测试
-├── FRED-UltraUITests/                 # UI 测试
-├── script/build_and_run.sh            # 构建与运行脚本
-├── init.sh                            # 项目健康检查脚本
-└── handoff.md                         # 交接文档
+│   │   ├── SeriesDetailView.swift
+│   │   └── SettingsView.swift
+│   ├── ContentView.swift           # 引导 / 侧边栏 / 详情工作区
+│   └── FRED_UltraApp.swift         # 应用入口与菜单命令
+├── FRED-UltraTests/                # 单元测试（47 个）
+├── FRED-UltraUITests/              # UI 冒烟测试
+├── script/
+│   ├── xcode-env.sh                # 定位可用的 Xcode 工具链
+│   └── build_and_run.sh            # 构建并运行
+├── init.sh                         # 构建 + 测试健康检查
+└── handoff.md                      # 交接文档
 ```
 
 ---
@@ -65,27 +75,18 @@ FRED-Ultra/
 ```
 用户输入 API Key
        ↓
-SettingsManager (UserDefaults 持久化)
+SettingsManager  ──►  Keychain（回退到 UserDefaults）
        ↓
-FREDService (Actor, 网络请求)
+FREDService (actor)  ──►  完整历史数据缓存 15 分钟
        ↓
-ViewModels (SearchViewModel / SeriesDetailViewModel)
+SeriesDetailViewModel
+       │
+       └─ 完整历史 → 单位换算 → 变换 → 时间窗口 → 指数化 → 派生状态
        ↓
-SwiftUI Views (ContentView / SeriesDetailView / SettingsView)
+SwiftUI Views（图表 / 表格 / 洞察）
 ```
 
-### 关键组件
-
-| 文件 | 职责 |
-|------|------|
-| `FRED_UltraApp.swift` | 应用入口、⌘R 刷新、⇧⌘E 导出、Data 菜单 |
-| `ContentView.swift` | 无 API Key 显示引导视图；有 API Key 显示侧边栏+详情工作区 |
-| `FREDModels.swift` | FRED API 模型、图表/表格展示模型、导出枚举、统计/洞察类型 |
-| `FREDService.swift` | UserDefaults-backed 设置管理器、async FRED API 客户端、导出服务 |
-| `SearchViewModel.swift` | 防抖搜索、加载状态、近期查询持久化 |
-| `SeriesDetailViewModel.swift` | 观测数据加载、基准化图表数据、统计计算、洞察生成、导出 |
-| `SeriesDetailView.swift` | 概览/数据/洞察三个标签页，支持多序列对比 |
-| `SettingsView.swift` | API Key 验证（测试后保存）、本地数据管理 |
+**关键设计：** 每个序列的完整历史只下载一次，之后切换时间窗口和变换均在本地完成，不产生任何网络请求。
 
 ---
 
@@ -100,29 +101,27 @@ SwiftUI Views (ContentView / SeriesDetailView / SettingsView)
 ### 终端
 
 ```bash
-# 构建并运行
-./script/build_and_run.sh
-
-# 仅验证能否启动
-./script/build_and_run.sh --verify
-
-# 实时查看应用日志
-./script/build_and_run.sh --logs
+./script/build_and_run.sh            # 构建并运行
+./script/build_and_run.sh --verify   # 构建、运行并确认进程已启动
+./script/build_and_run.sh --logs     # 构建、运行并实时查看应用日志
+./script/build_and_run.sh --build-only
 ```
+
+脚本会自动定位可用的 Xcode（包括 `Xcode-beta.app`），无需 `sudo xcode-select`。若系统只安装了 Command Line Tools，脚本会给出明确的修复指引。
 
 ---
 
 ## 验证命令 | Verification Commands
 
 ```bash
-# 构建
-xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra -sdk macosx build
+./init.sh          # 构建 + 全部测试
 
-# 运行单元测试
-xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra -sdk macosx test -only-testing:FRED-UltraTests
+# 或手动执行：
+xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra \
+  -destination 'platform=macOS' build
 
-# 项目健康检查
-./init.sh
+xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra \
+  -destination 'platform=macOS' -only-testing:FRED-UltraTests test
 ```
 
 ---
@@ -131,57 +130,95 @@ xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra -sdk macosx test -on
 
 | 快捷键 | 功能 |
 |--------|------|
-| ⌘R | 刷新当前序列详情视图 |
-| ⇧⌘E | 从当前序列详情视图导出 CSV |
+| ⌘R | 重新下载当前序列 |
+| ⇧⌘E | 导出 CSV |
+| ⇧⌘C | 复制可见数据到剪贴板 |
 | ⌘, | 打开设置 |
+
+未打开任何序列时，Data 菜单中的命令会自动置灰。
 
 ---
 
-## 界面预览 | Screenshots
+## 数据变换说明 | Transforms
 
-### 工作区引导
+| 变换 | 计算方式 | 输出单位 |
+|------|----------|----------|
+| **Level** | 原始发布值 | 序列自身单位 |
+| **Change** | 与上一期的绝对差 | 序列自身单位 |
+| **% Change** | 与上一期的百分比变化 | Percent |
+| **YoY %** | 与最接近一年前那一期的百分比变化 | Percent |
+| **Index (Start = 100)** | 以窗口内第一期为 100 重新基准化 | Index |
 
-![Welcome View](FRED-Ultra%202026-04-14%20at%2020.20.55@2x.png)
+- 增长率类变换在**完整历史**上计算，再截取时间窗口，因此窗口内第一个点也是真实计算结果，而非被丢弃的行。
+- YoY 通过**日期匹配**而非固定行偏移查找一年前的观测，因此对工作日频率、含缺失值、频率变更过的序列同样正确。
+- 指数化在截取窗口**之后**执行，基准始终是用户当前看到的第一期。
 
-首次打开应用时显示欢迎视图，引导用户输入 FRED API Key。
+---
 
-### 研究桌面
+## 单位与对比 | Units & Comparison
 
-![Research Desk](FRED-Ultra%202026-04-14%20at%2020.20.59@2x.png)
+- **单位家族**：货币、百分比、指数、人数、通用。
+- **可比性**：`Billions of Dollars` 与 `Current U.S. Dollars` 可比（统一换算为美元）；`Chained 2017 Dollars` 与名义美元**不可比**，因为价格基准不同。
+- **不可比单位**：添加对比序列时若单位不可比，应用会自动切换到 `Index (Start = 100)` 并给出提示；若用户已手动选择过变换，则尊重用户选择并显示警告，绝不把不同量纲画在同一坐标轴上。
+- **相关系数**：对比模式下计算主序列与各对比序列的 Pearson 相关系数，按最近日期对齐（月度 vs 季度等不同频率也能正确配对）。
 
-![Image3](FRED-Ultra2026-04-14at23.22.40@2x.png)
+### 单位标注
 
-![Image4](FRED-Ultra2026-04-14at23.22.22@2x.png)
-完成 API Key 验证后进入研究桌面，可进行搜索、对比和数据分析。
+图表按人类可读量级缩放（`Billions of Dollars` → `$29.0T`），因此图表标注的是 **U.S. Dollars**；数据表与导出保留 FRED 的**原始发布值**（`29,016.714`），标注为 **Billions of Dollars**。两处标签分别描述各自实际显示的内容。
 
 ---
 
 ## 数据存储 | Data Storage
 
-- **API Key** — 存储于本机 `UserDefaults`，键名 `FRED_API_KEY`
-- **收藏序列** — 存储于本机 `UserDefaults`，键名 `FRED_FAVORITES`
-- **近期搜索** — 存储于本机 `UserDefaults`，键名 `FRED_RECENT_SEARCHES`（最多 12 条）
+| 数据 | 位置 |
+|------|------|
+| API Key | macOS 钥匙串（若钥匙串不可用，回退至 `UserDefaults`，并在设置中明确标注） |
+| 收藏序列 | `UserDefaults`，键名 `FRED_FAVORITES` |
+| 近期搜索 | `UserDefaults`，键名 `FRED_RECENT_SEARCHES`（最多 12 条） |
+| 观测数据缓存 | 仅内存，15 分钟有效期，可在设置中清除 |
 
-应用仅与官方 FRED API 通信，不上传任何数据至第三方服务器。
+旧版本存储在 `UserDefaults` 中的 API Key 会在首次启动时自动迁移到钥匙串并删除明文副本。
+
+应用仅与官方 FRED API（`api.stlouisfed.org`）通信，不上传任何数据至第三方服务器。
 
 ---
 
-## 统计指标说明 | Statistics Explained
+## 统计指标说明 | Statistics
 
 | 指标 | 说明 |
 |------|------|
-| Latest | 当前最新读数 |
-| Latest Change | 相比上一期的绝对变化 |
-| Period Change | 选中时间范围内的总变化 |
-| Annualized Drift | 复合年化变化率 |
+| Latest | 窗口内最新读数 |
+| Latest Change | 相比上一期的变化（百分比序列以 pp 为单位） |
+| Period Change | 窗口内首末期之间的总变化 |
+| Annualized Drift | 复合年化增长率（仅在 Level 变换、首末值同号且为正时计算） |
+| Range Position | 最新值在窗口最低/最高值之间的位置 |
+| Volatility | 可见观测的标准差 |
+| Latest vs Average | 最新值相对窗口均值的标准分（z-score） |
+| Max Drawdown | 窗口内最大回撤（仅在全为正值的 Level 序列上计算） |
 
-对比模式（Comparison Mode）会将每个序列的起始值基准化为 100，使不同单位的序列可以公平比较。
+指标无法定义时显示 `n/a`，不会用占位数字冒充数据。
 
 ---
 
-## 注意事项 | Notes
+## 性能 | Performance
 
-- 需要 macOS 15 或更新版本
-- GitHub remote 未在仓库中配置，如需推送请自行添加 remote
-- API Key 不会上传至任何第三方，仅用于访问官方 FRED API
-- 应用日志通过 `os.log` 输出，可通过 `script/build_and_run.sh --logs` 查看
+- **单次下载**：每个序列的完整历史只请求一次（FRED 单次最多返回 100,000 条观测，覆盖其全部序列；最长的日度序列约 17,000 条）。
+- **本地窗口化**：切换时间范围、变换、趋势线均为纯本地计算。
+- **图表降采样**：单序列超过 1,500 个点时使用 LTTB（Largest-Triangle-Three-Buckets）降采样，保留峰值与拐点；数据表和导出始终保留全部行，界面会明确提示。
+- **表格惰性构建**：数据表行仅在需要时构建并按状态版本缓存。
+- **重试与限流**：429 与 5xx 采用有界指数退避重试（0.6s / 1.8s），远低于 FRED 每分钟 120 次的配额。
+
+---
+
+## 已知限制 | Known Limitations
+
+- 搜索结果上限为 50 条，暂不支持翻页。
+- 观测数据缓存仅存在于内存中，应用重启后需要重新下载。
+- 相关系数按最近日期对齐计算，频率差异极大的序列（如日度 vs 年度）应谨慎解读。
+- UI 测试中的启动截图用例在无 Accessibility 授权的无头环境下会自动跳过。
+
+---
+
+## 许可与数据来源 | License & Attribution
+
+数据来源：Federal Reserve Economic Data (FRED)，Federal Reserve Bank of St. Louis。使用前请阅读 [FRED 数据使用条款](https://fred.stlouisfed.org/legal/)。

@@ -1,12 +1,10 @@
-//
-//  FRED_UltraUITestsLaunchTests.swift
-//  FRED-UltraUITests
-//
-//  Created by Roger Lin on 12/11/24.
-//
-
 import XCTest
 
+/// Captures a launch screenshot for the test report.
+///
+/// Screenshot attachment needs an interactive, Accessibility-authorised session; the
+/// test skips rather than fails when run headlessly so `xcodebuild test` stays green
+/// in both environments.
 final class FRED_UltraUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
@@ -18,7 +16,17 @@ final class FRED_UltraUITestsLaunchTests: XCTestCase {
     }
 
     @MainActor
-    func testLaunch() throws {
-        throw XCTSkip("Launch screenshot capture requires AX authorization that is not consistently available in automated macOS runs.")
+    func testLaunchScreenshot() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        guard app.windows.firstMatch.waitForExistence(timeout: 20) else {
+            throw XCTSkip("No window appeared; screenshot capture requires an interactive session.")
+        }
+
+        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        attachment.name = "Launch Screen"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }
