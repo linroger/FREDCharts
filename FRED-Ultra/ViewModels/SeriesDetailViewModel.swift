@@ -12,6 +12,9 @@ import Foundation
 @MainActor
 final class SeriesDetailViewModel: ObservableObject {
     typealias ObservationsLoader = @Sendable (_ ids: [String], _ forceRefresh: Bool) async -> [SeriesLoadResult]
+    /// Supplies the NBER recession indicator. Returns an empty array on failure —
+    /// missing shading is a cosmetic loss and must never fail a series load.
+    typealias RecessionLoader = @Sendable () async -> [SeriesDataPoint]
 
     // MARK: Inputs
 
@@ -38,10 +41,14 @@ final class SeriesDetailViewModel: ObservableObject {
     @Published private(set) var displayUnits: String = ""
     @Published private(set) var isChartDownsampled = false
     @Published private(set) var visibleObservationCount = 0
+    @Published private(set) var showsRecessionShading: Bool
+    /// Recession bands already clipped to the visible window.
+    @Published private(set) var recessionIntervals: [DateInterval] = []
 
     // MARK: Storage
 
     private var fullHistory: [String: [SeriesDataPoint]] = [:]
+    private var recessionSource: [SeriesDataPoint] = []
     private var windowedSeries: [String: [SeriesDataPoint]] = [:]
     private var tableRowsCache: (token: Int, rows: [ObservationRow])?
 
@@ -51,6 +58,7 @@ final class SeriesDetailViewModel: ObservableObject {
     private var transformChosenByUser = false
 
     private let loader: ObservationsLoader
+    private let recessionLoader: RecessionLoader
     private let calendar: Calendar
     private let chartPointBudget: Int
 
@@ -61,6 +69,10 @@ final class SeriesDetailViewModel: ObservableObject {
         await FREDService.shared.loadSeries(ids: ids, forceRefresh: forceRefresh)
     }
 
+    nonisolated static let defaultRecessionLoader: RecessionLoader = {
+        (try? await FREDService.shared.observations(seriesId: FREDService.recessionIndicatorSeriesID)) ?? []
+    }
+
     init(
         series: FREDSeries,
         comparisonSeries: [FREDSeries] = [],
@@ -69,7 +81,9 @@ final class SeriesDetailViewModel: ObservableObject {
         transform: SeriesTransform = .level,
         calendar: Calendar = .current,
         chartPointBudget: Int = SeriesDetailViewModel.defaultChartPointBudget,
-        loader: @escaping ObservationsLoader = SeriesDetailViewModel.defaultLoader
+        showsRecessionShading: Bool = true,
+        loader: @escaping ObservationsLoader = SeriesDetailViewModel.defaultLoader,
+        recessionLoader: @escaping RecessionLoader = SeriesDetailViewModel.defaultRecessionLoader
     ) {
         self.mainSeries = series
         self.comparisonSeries = comparisonSeries
@@ -77,7 +91,9 @@ final class SeriesDetailViewModel: ObservableObject {
         self.transform = transform
         self.calendar = calendar
         self.chartPointBudget = chartPointBudget
+        self.showsRecessionShading = showsRecessionShading
         self.loader = loader
+        self.recessionLoader = recessionLoader
         self.fullHistory = initialHistory
 
         if !initialHistory.isEmpty {
@@ -218,6 +234,28 @@ final class SeriesDetailViewModel: ObservableObject {
 
         warnings = comparisonFailures
         errorMessage = primaryFailure
+
+        await loadRecessionsIfNeeded()
+        guard token == loadToken else { return }
+
+        rebuildDerivedState()
+    }
+
+    /// Fetches the recession indicator once, only while shading is switched on.
+    private func loadRecessionsIfNeeded() async {
+        guard showsRecessionShading, recessionSource.isEmpty else { return }
+
+        recessionSource = await recessionLoader()
+        if recessionSource.isEmpty {
+            AppLogger.detail.info("Recession indicator unavailable; chart shading is omitted")
+        }
+    }
+
+    func setRecessionShading(_ enabled: Bool) async {
+        guard showsRecessionShading != enabled else { return }
+        showsRecessionShading = enabled
+
+        await loadRecessionsIfNeeded()
         rebuildDerivedState()
     }
 
@@ -377,6 +415,27 @@ final class SeriesDetailViewModel: ObservableObject {
         rebuildStatisticsAndInsights()
         rebuildComparisonSummaries()
         rebuildUnitsNotice(sharedScale: sharedScale)
+        rebuildRecessionIntervals()
+    }
+
+    /// Clips the recession bands to the plotted date span so Swift Charts is never asked
+    /// to draw a rectangle that would stretch the x-axis beyond the data.
+    private func rebuildRecessionIntervals() {
+        guard showsRecessionShading, !recessionSource.isEmpty else {
+            recessionIntervals = []
+            return
+        }
+
+        let dates = windowedSeries.values.flatMap { [$0.first?.date, $0.last?.date] }.compactMap { $0 }
+        guard let earliest = dates.min(), let latest = dates.max(), latest > earliest else {
+            recessionIntervals = []
+            return
+        }
+
+        recessionIntervals = SeriesAnalytics.clip(
+            SeriesAnalytics.recessionIntervals(from: recessionSource),
+            to: DateInterval(start: earliest, end: latest)
+        )
     }
 
     private func rebuildChartPoints(for series: [FREDSeries]) {

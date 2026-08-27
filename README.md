@@ -17,6 +17,7 @@ A native macOS desktop app for searching, comparing, transforming, and exporting
 | **序列详情** | 关键指标、交互式图表、原始观测表、洞察卡片三个标签页 |
 | **数据变换** | Level / Change / % Change / YoY % / Index (Start = 100) 五种变换 |
 | **趋势线** | 可选的移动平均叠加线，窗口长度随数据频率自动缩放 |
+| **衰退阴影** | 按 NBER 口径（USREC）在图表上标注美国衰退区间，与 FRED 官网一致，可在设置中关闭 |
 | **多序列对比** | 单位兼容时统一量纲；单位不兼容时自动切换为指数化对比，并计算相关系数 |
 | **数据导出** | CSV / JSON 导出与剪贴板复制，内容与屏幕所见完全一致 |
 | **统一日志** | 覆盖搜索、详情加载、网络、导出与设置操作 |
@@ -133,6 +134,7 @@ xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra \
 | ⌘R | 重新下载当前序列 |
 | ⇧⌘E | 导出 CSV |
 | ⇧⌘C | 复制可见数据到剪贴板 |
+| ⌘1 / ⌘2 / ⌘3 | 切换 Overview / Data / Insights 标签页 |
 | ⌘, | 打开设置 |
 
 未打开任何序列时，Data 菜单中的命令会自动置灰。
@@ -175,6 +177,7 @@ xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra \
 | API Key | macOS 钥匙串（若钥匙串不可用，回退至 `UserDefaults`，并在设置中明确标注） |
 | 收藏序列 | `UserDefaults`，键名 `FRED_FAVORITES` |
 | 近期搜索 | `UserDefaults`，键名 `FRED_RECENT_SEARCHES`（最多 12 条） |
+| 图表偏好 | `UserDefaults`，键名 `FRED_RECESSION_SHADING`（衰退阴影开关，默认开启） |
 | 观测数据缓存 | 仅内存，15 分钟有效期，可在设置中清除 |
 
 旧版本存储在 `UserDefaults` 中的 API Key 会在首次启动时自动迁移到钥匙串并删除明文副本。
@@ -215,6 +218,7 @@ xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra \
 - 搜索结果上限为 50 条，暂不支持翻页。
 - 观测数据缓存仅存在于内存中，应用重启后需要重新下载。
 - 相关系数按最近日期对齐计算，频率差异极大的序列（如日度 vs 年度）应谨慎解读。
+- 衰退阴影仅覆盖**美国**衰退（NBER 口径）；查看其他经济体的序列时该标注不适用。
 - UI 测试中的启动截图用例在无 Accessibility 授权的无头环境下会自动跳过。
 
 ---

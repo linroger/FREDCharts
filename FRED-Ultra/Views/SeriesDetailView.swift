@@ -40,6 +40,7 @@ struct SeriesDetailView: View {
             }
         }
         .task {
+            await viewModel.setRecessionShading(settings.showsRecessionShading)
             await viewModel.loadData()
         }
         .onAppear {
@@ -49,7 +50,12 @@ struct SeriesDetailView: View {
                     refresh: { Task { await viewModel.refreshData() } },
                     exportCSV: { export(.csv) },
                     exportJSON: { export(.json) },
-                    copyToClipboard: copyToClipboard
+                    copyToClipboard: copyToClipboard,
+                    selectTab: { index in
+                        let tabs = DetailTab.allCases
+                        guard tabs.indices.contains(index) else { return }
+                        selectedTab = tabs[index]
+                    }
                 )
             )
         }
@@ -204,6 +210,17 @@ struct SeriesDetailView: View {
                   : viewModel.movingAverageLabel)
             .accessibilityLabel("Trend line")
             .accessibilityIdentifier("detail.trendPicker")
+
+            Toggle("Recessions", isOn: Binding(
+                get: { viewModel.showsRecessionShading },
+                set: { enabled in
+                    settings.setRecessionShading(enabled)
+                    Task { await viewModel.setRecessionShading(enabled) }
+                }
+            ))
+            .toggleStyle(.checkbox)
+            .help("Shade U.S. recession periods as dated by the NBER")
+            .accessibilityIdentifier("detail.recessionToggle")
 
             Spacer(minLength: 0)
 

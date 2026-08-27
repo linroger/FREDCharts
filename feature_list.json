@@ -86,6 +86,19 @@
     "passes": true
   },
   {
+    "id": "feature_recession_shading",
+    "category": "functional",
+    "description": "Charts shade U.S. recession periods using the NBER-based indicator, matching FRED's own charts, and the preference persists.",
+    "steps": [
+      "Open a series that spans a recession",
+      "Confirm the recession months are shaded behind the plotted lines",
+      "Turn the Recessions checkbox off and confirm the bands disappear",
+      "Reopen the app and confirm the preference was remembered",
+      "Confirm a series load still succeeds when the indicator is unavailable"
+    ],
+    "passes": true
+  },
+  {
     "id": "feature_comparison_and_normalization",
     "category": "functional",
     "description": "Users can compare multiple series, with sane handling when units differ, plus a correlation summary.",

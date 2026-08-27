@@ -13,6 +13,8 @@ final class AppCommandCenter: ObservableObject {
         let exportCSV: () -> Void
         let exportJSON: () -> Void
         let copyToClipboard: () -> Void
+        /// Selects the detail tab at `index`, ignoring out-of-range values.
+        let selectTab: (Int) -> Void
     }
 
     /// True while a series detail view is registered, i.e. the data commands are live.
@@ -42,4 +44,5 @@ final class AppCommandCenter: ObservableObject {
     func exportCSV() { handlers?.exportCSV() }
     func exportJSON() { handlers?.exportJSON() }
     func copyToClipboard() { handlers?.copyToClipboard() }
+    func selectTab(_ index: Int) { handlers?.selectTab(index) }
 }

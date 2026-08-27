@@ -47,6 +47,19 @@ struct FRED_UltraApp: App {
                 .disabled(!commandCenter.isSeriesActive)
             }
 
+            // `CommandMenu` takes no `disabled` modifier, so each item guards itself.
+            CommandMenu("View") {
+                Button("Overview") { commandCenter.selectTab(0) }
+                    .keyboardShortcut("1", modifiers: .command)
+                    .disabled(!commandCenter.isSeriesActive)
+                Button("Data") { commandCenter.selectTab(1) }
+                    .keyboardShortcut("2", modifiers: .command)
+                    .disabled(!commandCenter.isSeriesActive)
+                Button("Insights") { commandCenter.selectTab(2) }
+                    .keyboardShortcut("3", modifiers: .command)
+                    .disabled(!commandCenter.isSeriesActive)
+            }
+
             CommandGroup(replacing: .help) {
                 Link("FRED API Documentation", destination: URL(string: "https://fred.stlouisfed.org/docs/api/fred/")!)
                 Link("FRED Website", destination: URL(string: "https://fred.stlouisfed.org")!)

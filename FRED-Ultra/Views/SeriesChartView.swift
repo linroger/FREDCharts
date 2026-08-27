@@ -32,6 +32,14 @@ struct SeriesChartView: View {
                 } else {
                     chart
                     selectionReadout
+                    if !viewModel.recessionIntervals.isEmpty {
+                        Label(
+                            "Shaded bands mark U.S. recessions as dated by the NBER.",
+                            systemImage: "rectangle.fill"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
                     Text(viewModel.transformExplanation)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -43,6 +51,16 @@ struct SeriesChartView: View {
 
     private var chart: some View {
         Chart {
+            // Drawn first so the bands sit behind every line and marker.
+            ForEach(viewModel.recessionIntervals, id: \.start) { interval in
+                RectangleMark(
+                    xStart: .value("Recession start", interval.start),
+                    xEnd: .value("Recession end", interval.end)
+                )
+                .foregroundStyle(.secondary.opacity(0.15))
+                .accessibilityLabel("U.S. recession")
+            }
+
             ForEach(viewModel.chartPoints) { point in
                 if point.role == .observed, viewModel.allSeries.count == 1 {
                     AreaMark(

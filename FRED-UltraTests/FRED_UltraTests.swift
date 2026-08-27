@@ -447,6 +447,60 @@ struct AnalyticsTests {
         #expect(sampled.contains { $0.value == -999 })
     }
 
+    /// USREC is 1 for every month from the month after a peak through the trough, so a
+    /// run of 1s is one recession band.
+    @Test func recessionRunsBecomeShadeableIntervals() throws {
+        let points = Fixture.monthly(start: "2019-11-01", values: [0, 0, 0, 0, 1, 1, 0, 0])
+        let intervals = SeriesAnalytics.recessionIntervals(from: points)
+
+        #expect(intervals.count == 1)
+        let interval = try #require(intervals.first)
+        #expect(interval.start == points[4].date)
+        // Ends where the indicator returns to zero, so both flagged months are covered.
+        #expect(interval.end == points[6].date)
+    }
+
+    /// An ongoing recession has no closing zero; the band must still cover its last month
+    /// instead of collapsing to a zero-width line on the first of that month.
+    @Test func anOngoingRecessionExtendsPastItsLastObservation() throws {
+        let points = Fixture.monthly(start: "2024-01-01", values: [0, 1, 1])
+        let intervals = SeriesAnalytics.recessionIntervals(from: points)
+
+        let interval = try #require(intervals.first)
+        #expect(interval.start == points[1].date)
+        #expect(interval.end > points[2].date)
+    }
+
+    @Test func separateRecessionsProduceSeparateBands() {
+        let points = Fixture.monthly(start: "2000-01-01", values: [1, 1, 0, 0, 1, 0])
+        #expect(SeriesAnalytics.recessionIntervals(from: points).count == 2)
+    }
+
+    @Test func aSeriesWithoutRecessionsProducesNoBands() {
+        #expect(SeriesAnalytics.recessionIntervals(from: Fixture.monthly(start: "2000-01-01", values: [0, 0, 0])).isEmpty)
+        #expect(SeriesAnalytics.recessionIntervals(from: []).isEmpty)
+    }
+
+    @Test func bandsAreClippedToTheVisibleWindow() throws {
+        let bands = [
+            DateInterval(start: Fixture.date("2008-01-01"), end: Fixture.date("2009-07-01")),
+            DateInterval(start: Fixture.date("2020-03-01"), end: Fixture.date("2020-05-01"))
+        ]
+        let window = DateInterval(start: Fixture.date("2009-01-01"), end: Fixture.date("2020-04-01"))
+
+        let clipped = SeriesAnalytics.clip(bands, to: window)
+
+        #expect(clipped.count == 2)
+        #expect(clipped[0].start == window.start)
+        #expect(clipped[0].end == bands[0].end)
+        #expect(clipped[1].end == window.end)
+
+        // A band entirely outside the window is dropped, not squashed to zero width.
+        let narrow = DateInterval(start: Fixture.date("2015-01-01"), end: Fixture.date("2016-01-01"))
+        #expect(SeriesAnalytics.clip(bands, to: narrow).isEmpty)
+        #expect(SeriesAnalytics.clip(bands, to: nil).count == 2)
+    }
+
     @Test func correlationDetectsPerfectRelationships() {
         let base = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4, 5])
         let same = Fixture.monthly(start: "2024-01-01", values: [2, 4, 6, 8, 10])
@@ -1141,6 +1195,74 @@ struct SeriesDetailViewModelTests {
         #expect(!overlay.isEmpty)
         #expect(overlay[0].plotKey.hasSuffix("(avg)"))
         #expect(viewModel.movingAverageLabel == "3-period moving average")
+    }
+
+    /// Shading is a chart preference: turning it off must clear the bands, and turning it
+    /// on must fetch the indicator without touching the series load.
+    @Test func recessionShadingCanBeToggled() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
+        let recession = Fixture.monthly(start: "2019-11-01", values: [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0])
+
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: true,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2019-11-01", values: (0..<12).map(Double.init))]),
+            recessionLoader: { recession }
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.recessionIntervals.count == 1)
+
+        await viewModel.setRecessionShading(false)
+        #expect(viewModel.recessionIntervals.isEmpty)
+
+        await viewModel.setRecessionShading(true)
+        #expect(viewModel.recessionIntervals.count == 1)
+    }
+
+    /// A missing indicator is a cosmetic loss, never a load failure.
+    @Test func anUnavailableRecessionIndicatorIsNotAnError() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: true,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2024-01-01", values: [1, 2, 3])]),
+            recessionLoader: { [] }
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.recessionIntervals.isEmpty)
+        #expect(viewModel.errorMessage == nil)
+        #expect(viewModel.warnings.isEmpty)
+        #expect(viewModel.visibleObservationCount == 3)
+    }
+
+    /// Bands are clipped to the plotted span so a decades-old recession cannot stretch
+    /// the x-axis of a short window.
+    @Test func recessionBandsNeverExtendBeyondThePlottedData() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
+        let recession = Fixture.monthly(start: "2019-11-01", values: [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0])
+
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: true,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2020-04-01", values: [1, 2, 3, 4])]),
+            recessionLoader: { recession }
+        )
+        await viewModel.loadData()
+
+        // The series starts in April 2020; the March–April band survives only as its
+        // overlapping tail.
+        for interval in viewModel.recessionIntervals {
+            #expect(interval.start >= Fixture.date("2020-04-01"))
+            #expect(interval.end <= Fixture.date("2020-07-01"))
+        }
     }
 
     @Test func nearestPointLookupFindsTheClosestObservation() async {

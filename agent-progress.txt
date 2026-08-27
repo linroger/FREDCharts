@@ -155,3 +155,28 @@ Session log:
       Accessibility-authorized.
     - Walk the UI manually with a real key to confirm the chart hover readout and the save
       panel behave as intended.
+
+- 2026-08-28 07:35–07:50 CST / branch: repair/full-audit
+  - Focus: /loop iteration 1 — add the most FRED-native missing feature.
+  - Added:
+    - NBER recession shading. `SeriesAnalytics.recessionIntervals(from:)` converts the
+      monthly 0/1 USREC indicator into date bands; `clip(_:to:)` trims them to the plotted
+      span so an old recession cannot stretch a short window's x-axis. Drawn as
+      `RectangleMark`s behind every line, matching FRED's own charts. On by default,
+      persisted, and toggleable both in the chart controls and in Settings.
+    - A View menu with Cmd-1/2/3 for the Overview, Data, and Insights tabs, routed through
+      AppCommandCenter so the items disable when no series is open.
+  - Design notes:
+    - The indicator is fetched only while shading is on, and only once per view model.
+    - A failed fetch is logged and produces no bands; it is never surfaced as a load error,
+      because losing shading is cosmetic and losing the series is not.
+    - A band ending on the last flagged month is extended by one median period, otherwise
+      an ongoing recession would collapse to a zero-width line on the first of the month.
+  - Verification:
+    - `xcodebuild ... build` -> BUILD SUCCEEDED, zero warnings.
+    - `xcodebuild ... -only-testing:FRED-UltraTests test` -> TEST SUCCEEDED, 100 tests
+      (8 new, covering run detection, ongoing recessions, clipping, the toggle, and the
+      unavailable-indicator path).
+  - Next candidates: spread mode (series A minus series B, for yield curves and real
+    rates), a scatter/regression view between two series, an explicit custom date range,
+    and chart image export.

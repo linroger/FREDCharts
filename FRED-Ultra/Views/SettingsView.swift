@@ -59,6 +59,18 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section {
+                Toggle("Shade U.S. recessions on charts", isOn: Binding(
+                    get: { settings.showsRecessionShading },
+                    set: { settings.setRecessionShading($0) }
+                ))
+            } header: {
+                Text("Charts")
+            } footer: {
+                Text("Uses the NBER-based recession indicator (USREC), the same dating FRED uses for the shaded bands on its own charts.")
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Workspace Data") {
                 LabeledContent("Favorites", value: "\(settings.favorites.count)")
                 LabeledContent("Recent Searches", value: "\(settings.recentSearches.count)")

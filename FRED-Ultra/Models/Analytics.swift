@@ -227,6 +227,63 @@ enum SeriesAnalytics {
         return Array(points[firstIndex...])
     }
 
+    // MARK: Recessions
+
+    /// Converts an NBER 0/1 recession indicator into shadeable date intervals.
+    ///
+    /// `USREC` publishes one monthly observation that is 1 for every month from the
+    /// month following a business-cycle peak through the trough month. A run of 1s is
+    /// therefore a recession, and the band must extend to the *start of the month after*
+    /// the last flagged month so the final month is shaded in full rather than collapsing
+    /// to a zero-width line at its first day.
+    static func recessionIntervals(from points: [SeriesDataPoint]) -> [DateInterval] {
+        guard !points.isEmpty else { return [] }
+
+        // A monthly series has an uneven month length; the median gap is the best
+        // estimate of how wide the trailing month should be drawn.
+        let trailingWidth = medianSpacing(points) ?? (30 * 86_400)
+
+        var intervals: [DateInterval] = []
+        var runStart: Date?
+
+        for (index, point) in points.enumerated() {
+            let inRecession = point.value >= 0.5
+
+            if inRecession, runStart == nil {
+                runStart = point.date
+            }
+
+            guard let start = runStart else { continue }
+
+            let isLastPoint = index == points.count - 1
+            guard !inRecession || isLastPoint else { continue }
+
+            // End at the first non-recession observation, or one period past the last.
+            let end = inRecession
+                ? point.date.addingTimeInterval(trailingWidth)
+                : point.date
+
+            if end > start {
+                intervals.append(DateInterval(start: start, end: end))
+            }
+            runStart = nil
+        }
+
+        return intervals
+    }
+
+    /// Trims intervals to a visible window, dropping any that fall outside it entirely.
+    static func clip(_ intervals: [DateInterval], to window: DateInterval?) -> [DateInterval] {
+        guard let window else { return intervals }
+
+        return intervals.compactMap { interval in
+            let start = Swift.max(interval.start, window.start)
+            let end = Swift.min(interval.end, window.end)
+            guard end > start else { return nil }
+            return DateInterval(start: start, end: end)
+        }
+    }
+
     // MARK: Alignment & Correlation
 
     static func medianSpacing(_ points: [SeriesDataPoint]) -> TimeInterval? {

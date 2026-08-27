@@ -81,6 +81,10 @@ actor FREDService {
     /// longest daily series is under 17,000 rows.
     static let observationRequestLimit = 100_000
 
+    /// NBER-based recession indicator used for chart shading, matching the bands FRED
+    /// draws on its own charts. Monthly, 1 during a recession and 0 otherwise.
+    static let recessionIndicatorSeriesID = "USREC"
+
     private let baseURL = URL(string: "https://api.stlouisfed.org/fred")!
     private let session: URLSession
     private let decoder = JSONDecoder()

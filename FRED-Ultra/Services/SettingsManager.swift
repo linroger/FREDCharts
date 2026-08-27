@@ -28,6 +28,7 @@ final class SettingsManager: ObservableObject {
     @Published private(set) var apiKeyStorage: APIKeyStorage
     @Published private(set) var favorites: [FavoriteSeries]
     @Published private(set) var recentSearches: [String]
+    @Published private(set) var showsRecessionShading: Bool
 
     private let defaults: UserDefaults
     private let keychainAccount: String
@@ -38,6 +39,7 @@ final class SettingsManager: ObservableObject {
         static let apiKey = "FRED_API_KEY"
         static let favorites = "FRED_FAVORITES"
         static let recentSearches = "FRED_RECENT_SEARCHES"
+        static let recessionShading = "FRED_RECESSION_SHADING"
     }
 
     /// `keychainAccount` is injectable so tests can run against an isolated credential
@@ -67,6 +69,8 @@ final class SettingsManager: ObservableObject {
         apiKey = resolvedKey
         apiKeyStorage = resolvedStorage
         recentSearches = defaults.stringArray(forKey: Keys.recentSearches) ?? []
+        // Defaults to on, matching FRED's own charts.
+        showsRecessionShading = defaults.object(forKey: Keys.recessionShading) as? Bool ?? true
 
         if let data = defaults.data(forKey: Keys.favorites),
            let decoded = try? JSONDecoder().decode([FavoriteSeries].self, from: data) {
@@ -201,6 +205,17 @@ final class SettingsManager: ObservableObject {
         recentSearches = Array(updated.prefix(Self.maximumRecentSearches))
         defaults.set(recentSearches, forKey: Keys.recentSearches)
     }
+
+    // MARK: Chart preferences
+
+    func setRecessionShading(_ enabled: Bool) {
+        guard showsRecessionShading != enabled else { return }
+        showsRecessionShading = enabled
+        defaults.set(enabled, forKey: Keys.recessionShading)
+        AppLogger.settings.info("Recession shading \(enabled ? "enabled" : "disabled", privacy: .public)")
+    }
+
+    // MARK: Recent searches
 
     func clearRecentSearches() {
         guard !recentSearches.isEmpty else { return }
