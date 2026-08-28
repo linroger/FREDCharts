@@ -11,6 +11,9 @@ struct SeriesDetailView: View {
     @State private var selectedDate: Date?
     @State private var exportNotice: ExportNotice?
     @State private var tableSortOrder = SeriesDetailView.defaultTableSortOrder
+    @State private var showingCustomRange = false
+    @State private var customStart = Date()
+    @State private var customEnd = Date()
 
     /// Newest first, matching how the view model already builds its rows.
     static let defaultTableSortOrder = [KeyPathComparator(\ObservationRow.date, order: .reverse)]
@@ -174,20 +177,45 @@ struct SeriesDetailView: View {
     /// its own ("All Time", "% Change"), so the labels are hidden and restated as help.
     private var controlsView: some View {
         HStack(spacing: 10) {
-            Picker("Date Range", selection: Binding(
-                get: { viewModel.selectedRange },
-                set: { viewModel.updateRange($0) }
-            )) {
+            // A Menu rather than a Picker: the window is either a preset or an explicit
+            // interval, and a Picker cannot carry an action alongside its options.
+            Menu {
                 ForEach(DateRangeOption.allCases) { option in
-                    Text(option.rawValue).tag(option)
+                    Button {
+                        viewModel.updateRange(option)
+                    } label: {
+                        if viewModel.selectedRange == option {
+                            Label(option.rawValue, systemImage: "checkmark")
+                        } else {
+                            Text(option.rawValue)
+                        }
+                    }
                 }
+
+                Divider()
+
+                Button {
+                    prepareCustomRange()
+                    showingCustomRange = true
+                } label: {
+                    if viewModel.window.isCustom {
+                        Label("Custom Range…", systemImage: "checkmark")
+                    } else {
+                        Text("Custom Range…")
+                    }
+                }
+                .disabled(viewModel.availableDateRange == nil)
+            } label: {
+                Text(viewModel.rangeLabel)
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
+            .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Time window, measured back from this series' latest observation")
+            .help("Time window. Presets are measured back from this series' latest observation.")
             .accessibilityLabel("Date range")
             .accessibilityIdentifier("detail.rangePicker")
+            .popover(isPresented: $showingCustomRange, arrowEdge: .bottom) {
+                customRangePopover
+            }
 
             Picker("Transform", selection: Binding(
                 get: { viewModel.transform },
@@ -281,6 +309,54 @@ struct SeriesDetailView: View {
                     tint: .secondary
                 )
             }
+        }
+    }
+
+    /// Seeds the pickers from the active window, falling back to the full coverage.
+    private func prepareCustomRange() {
+        guard let coverage = viewModel.availableDateRange else { return }
+
+        if case .custom(let start, let end) = viewModel.window {
+            customStart = start
+            customEnd = end
+        } else {
+            let bounds = viewModel.window.bounds(anchoredTo: viewModel.anchorDate)
+            customStart = bounds.start.map { Swift.max($0, coverage.lowerBound) } ?? coverage.lowerBound
+            customEnd = coverage.upperBound
+        }
+    }
+
+    @ViewBuilder
+    private var customRangePopover: some View {
+        if let coverage = viewModel.availableDateRange {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Custom Range")
+                    .font(.headline)
+
+                // Bounded by the loaded coverage, so an empty window cannot be chosen.
+                DatePicker("From", selection: $customStart, in: coverage, displayedComponents: .date)
+                    .accessibilityIdentifier("detail.customRangeStart")
+                DatePicker("To", selection: $customEnd, in: coverage, displayedComponents: .date)
+                    .accessibilityIdentifier("detail.customRangeEnd")
+
+                Text("Available data runs \(FREDDate.displayString(from: coverage.lowerBound)) to \(FREDDate.displayString(from: coverage.upperBound)).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Button("Cancel") { showingCustomRange = false }
+                    Spacer()
+                    Button("Apply") {
+                        viewModel.applyCustomWindow(start: customStart, end: customEnd)
+                        showingCustomRange = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("detail.customRangeApply")
+                }
+            }
+            .padding(16)
+            .frame(width: 300)
         }
     }
 
@@ -405,7 +481,7 @@ struct SeriesDetailView: View {
                 Divider()
 
                 HStack {
-                    Text("\(rows.count) observations • \(viewModel.selectedRange.rawValue) • \(viewModel.transform.rawValue) • values as published in \(viewModel.publishedUnitsLabel)")
+                    Text("\(rows.count) observations • \(viewModel.rangeLabel) • \(viewModel.transform.rawValue) • values as published in \(viewModel.publishedUnitsLabel)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -440,7 +516,7 @@ struct SeriesDetailView: View {
                         InsightStatCard(title: "Median", value: statistics.formattedMedian, detail: "Middle observation", symbol: "equal")
                         InsightStatCard(title: "Range", value: statistics.formattedRange, detail: "\(statistics.formattedMin) to \(statistics.formattedMax)", symbol: "arrow.up.and.down")
                         InsightStatCard(title: "Std Dev", value: statistics.formattedStdDev, detail: "Dispersion of visible values", symbol: "waveform.path.ecg")
-                        InsightStatCard(title: "Window", value: statistics.formattedSpan, detail: viewModel.selectedRange.rawValue, symbol: "calendar")
+                        InsightStatCard(title: "Window", value: statistics.formattedSpan, detail: viewModel.rangeLabel, symbol: "calendar")
                     }
                 } else {
                     ContentUnavailableView(

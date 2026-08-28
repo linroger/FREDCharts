@@ -112,6 +112,19 @@
     "passes": true
   },
   {
+    "id": "feature_custom_date_window",
+    "category": "functional",
+    "description": "Beyond the presets, an explicit start and end date can bound the window, clamped to the loaded coverage.",
+    "steps": [
+      "Open a series and choose Custom Range from the window menu",
+      "Confirm the date pickers are bounded by the series' actual coverage",
+      "Apply a range and confirm the chart, statistics, table, and export all narrow to it",
+      "Confirm the window label and export metadata name the custom interval",
+      "Return to a preset and confirm the full span is restored"
+    ],
+    "passes": true
+  },
+  {
     "id": "feature_recession_shading",
     "category": "functional",
     "description": "Charts shade U.S. recession periods using the NBER-based indicator, matching FRED's own charts, and the preference persists.",

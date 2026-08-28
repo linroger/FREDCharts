@@ -22,7 +22,7 @@ final class SeriesDetailViewModel: ObservableObject {
 
     @Published private(set) var mainSeries: FREDSeries
     @Published private(set) var comparisonSeries: [FREDSeries]
-    @Published private(set) var selectedRange: DateRangeOption
+    @Published private(set) var window: DateWindow
     @Published private(set) var transform: SeriesTransform = .level
     @Published private(set) var movingAverage: MovingAverageOption = .off
     @Published private(set) var chartMode: ChartMode = .overlay
@@ -113,7 +113,7 @@ final class SeriesDetailViewModel: ObservableObject {
     ) {
         self.mainSeries = series
         self.comparisonSeries = comparisonSeries
-        self.selectedRange = selectedRange
+        self.window = .preset(selectedRange)
         self.transform = transform
         self.calendar = calendar
         self.chartPointBudget = chartPointBudget
@@ -133,6 +133,22 @@ final class SeriesDetailViewModel: ObservableObject {
     var allSeries: [FREDSeries] { [mainSeries] + comparisonSeries }
 
     var canCompare: Bool { !comparisonSeries.isEmpty }
+
+    /// The active preset, or `nil` while a custom interval is in force.
+    var selectedRange: DateRangeOption? { window.preset }
+
+    /// Human label for the active window, used by the UI, exports, and filenames.
+    var rangeLabel: String { window.label }
+
+    /// Span the loaded data actually covers, which bounds the custom-range pickers so a
+    /// reader cannot choose a window with nothing in it.
+    var availableDateRange: ClosedRange<Date>? {
+        let starts = allSeries.compactMap { fullHistory[$0.id]?.first?.date }
+        let ends = allSeries.compactMap { fullHistory[$0.id]?.last?.date }
+
+        guard let lower = starts.min(), let upper = ends.max(), lower <= upper else { return nil }
+        return lower...upper
+    }
 
     var seriesCountLabel: String {
         allSeries.count == 1 ? "1 series loaded" : "\(allSeries.count) series loaded"
@@ -211,7 +227,7 @@ final class SeriesDetailViewModel: ObservableObject {
 
     var emptyWindowMessage: String {
         let coverage = mainSeries.formattedDateRange
-        return "\(mainSeries.id) has no observations in the \(selectedRange.rawValue.lowercased()) window. Published coverage is \(coverage)."
+        return "\(mainSeries.id) has no observations in the \(rangeLabel) window. Published coverage is \(coverage)."
     }
 
     var transformExplanation: String {
@@ -381,9 +397,18 @@ final class SeriesDetailViewModel: ObservableObject {
     }
 
     func updateRange(_ range: DateRangeOption) {
-        guard selectedRange != range else { return }
-        selectedRange = range
+        updateWindow(.preset(range))
+    }
+
+    func updateWindow(_ newWindow: DateWindow) {
+        guard window != newWindow else { return }
+        window = newWindow
         rebuildDerivedState()
+    }
+
+    /// Applies an explicit interval, ordered and clamped to the loaded coverage.
+    func applyCustomWindow(start: Date, end: Date) {
+        updateWindow(.custom(start: start, end: end, clampedTo: availableDateRange))
     }
 
     func updateTransform(_ newTransform: SeriesTransform) {
@@ -451,7 +476,7 @@ final class SeriesDetailViewModel: ObservableObject {
         // series they were derived from.
         guard chartMode == .overlay else {
             return ExportPayload(
-                rangeLabel: selectedRange.rawValue,
+                rangeLabel: rangeLabel,
                 transform: transform,
                 columns: displayedSeries.map { line in
                     ExportPayload.SeriesColumn(
@@ -467,7 +492,7 @@ final class SeriesDetailViewModel: ObservableObject {
         }
 
         return ExportPayload(
-            rangeLabel: selectedRange.rawValue,
+            rangeLabel: rangeLabel,
             transform: transform,
             columns: allSeries.map { series in
                 ExportPayload.SeriesColumn(
@@ -486,7 +511,7 @@ final class SeriesDetailViewModel: ObservableObject {
             return .failed("There is nothing to export in the current window.")
         }
 
-        let name = "\(mainSeries.id)-\(selectedRange.rawValue)-\(transform.shortLabel)"
+        let name = "\(mainSeries.id)-\(rangeLabel)-\(transform.shortLabel)"
             .replacingOccurrences(of: " ", with: "-")
             .lowercased()
 
@@ -524,7 +549,7 @@ final class SeriesDetailViewModel: ObservableObject {
         let sharedScale = usesSharedUnitScale
         displayUnits = transform.resultUnits(baseUnits: effectiveBaseUnits)
 
-        let windowStart = selectedRange.startDate(anchoredTo: anchorDate, calendar: calendar)
+        let bounds = window.bounds(anchoredTo: anchorDate, calendar: calendar)
 
         var newWindowed: [String: [SeriesDataPoint]] = [:]
         newWindowed.reserveCapacity(series.count)
@@ -539,7 +564,7 @@ final class SeriesDetailViewModel: ObservableObject {
             // Growth transforms run on the full history so the first visible point has a
             // real predecessor rather than being silently dropped.
             let transformed = SeriesAnalytics.applyTransform(scaled, transform: transform, calendar: calendar)
-            var window = SeriesAnalytics.filter(transformed, from: windowStart)
+            var window = SeriesAnalytics.filter(transformed, from: bounds.start, through: bounds.end)
 
             // Indexing is relative to what the reader can see, so it happens after windowing.
             if transform == .indexed {

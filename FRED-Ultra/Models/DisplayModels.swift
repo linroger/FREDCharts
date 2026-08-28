@@ -46,6 +46,60 @@ enum DateRangeOption: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Date Window
+
+/// The span of data on screen: one of the presets, or an explicit interval.
+///
+/// Presets answer "the last N years"; a custom interval answers "what happened between
+/// these two dates", which is the question a reader has once they have spotted something.
+enum DateWindow: Equatable, Sendable {
+    case preset(DateRangeOption)
+    case custom(start: Date, end: Date)
+
+    var isCustom: Bool {
+        if case .custom = self { return true }
+        return false
+    }
+
+    var preset: DateRangeOption? {
+        if case .preset(let option) = self { return option }
+        return nil
+    }
+
+    var label: String {
+        switch self {
+        case .preset(let option):
+            return option.rawValue
+        case .custom(let start, let end):
+            return "\(FREDDate.monthYearString(from: start)) – \(FREDDate.monthYearString(from: end))"
+        }
+    }
+
+    /// Inclusive bounds. `nil` on a side means unbounded there.
+    func bounds(anchoredTo anchor: Date, calendar: Calendar = .current) -> (start: Date?, end: Date?) {
+        switch self {
+        case .preset(let option):
+            return (option.startDate(anchoredTo: anchor, calendar: calendar), nil)
+        case .custom(let start, let end):
+            return (start, end)
+        }
+    }
+
+    /// Builds a custom window, ordering the endpoints and clamping them to what the data
+    /// actually covers, so the reader cannot select a window with nothing in it.
+    static func custom(start: Date, end: Date, clampedTo coverage: ClosedRange<Date>?) -> DateWindow {
+        var lower = Swift.min(start, end)
+        var upper = Swift.max(start, end)
+
+        if let coverage {
+            lower = Swift.min(Swift.max(lower, coverage.lowerBound), coverage.upperBound)
+            upper = Swift.max(Swift.min(upper, coverage.upperBound), coverage.lowerBound)
+        }
+
+        return .custom(start: lower, end: upper)
+    }
+}
+
 // MARK: - Transforms
 
 /// Analytical transform applied to every visible series before charting.

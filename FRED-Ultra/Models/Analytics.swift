@@ -220,11 +220,28 @@ enum SeriesAnalytics {
 
     // MARK: Windowing
 
-    static func filter(_ points: [SeriesDataPoint], from startDate: Date?) -> [SeriesDataPoint] {
-        guard let startDate else { return points }
-        // Points are sorted, so the window is a suffix.
-        guard let firstIndex = points.firstIndex(where: { $0.date >= startDate }) else { return [] }
-        return Array(points[firstIndex...])
+    /// Restricts a sorted series to an inclusive window. Either bound may be `nil`.
+    static func filter(
+        _ points: [SeriesDataPoint],
+        from startDate: Date?,
+        through endDate: Date? = nil
+    ) -> [SeriesDataPoint] {
+        guard startDate != nil || endDate != nil else { return points }
+
+        var slice = points[...]
+
+        if let startDate {
+            // Points are sorted, so a lower bound trims a prefix.
+            guard let firstIndex = slice.firstIndex(where: { $0.date >= startDate }) else { return [] }
+            slice = slice[firstIndex...]
+        }
+
+        if let endDate {
+            guard let lastIndex = slice.lastIndex(where: { $0.date <= endDate }) else { return [] }
+            slice = slice[...lastIndex]
+        }
+
+        return Array(slice)
     }
 
     // MARK: Spreads

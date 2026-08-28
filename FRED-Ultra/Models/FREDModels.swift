@@ -36,6 +36,17 @@ enum FREDDate {
     static func displayString(from date: Date) -> String {
         displayFormatter.string(from: date)
     }
+
+    private static let monthYearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("MMM y")
+        return formatter
+    }()
+
+    /// Compact label for a window endpoint, e.g. "Jan 2008".
+    static func monthYearString(from date: Date) -> String {
+        monthYearFormatter.string(from: date)
+    }
 }
 
 // MARK: - Search Response

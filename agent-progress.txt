@@ -299,3 +299,33 @@ Session log:
       with no x-variation or too few points, the noisy-slope flag, dated alignment, and the
       full relationship surface following and clearing its partner).
   - Next candidates: explicit custom date range, chart image export, and saved workspaces.
+
+- 2026-08-29 00:15–00:40 CST / branch: repair/full-audit
+  - Focus: /loop iteration 5 — explicit custom date ranges.
+  - Added:
+    - `DateWindow`, an enum of `.preset(DateRangeOption)` or `.custom(start:end:)`. The view
+      model now stores a window rather than a preset, and `rangeLabel` feeds the UI,
+      exports, and export filenames alike.
+    - `SeriesAnalytics.filter(_:from:through:)` gained an upper bound, which is what makes
+      "just 2008 to 2010" expressible at all.
+    - A window menu carrying the presets plus Custom Range, opening a popover with two
+      date pickers bounded by the series' actual coverage.
+    - `DateWindow.custom(start:end:clampedTo:)` orders the endpoints and clamps them to the
+      loaded coverage, so a reader cannot select a window with nothing in it.
+  - Design notes:
+    - Modelled as an enum rather than a preset plus an override flag, so "which window is
+      active" has exactly one representation and cannot drift out of sync.
+    - `selectedRange` is now optional and is `nil` while a custom interval is in force,
+      which reads correctly at every call site instead of reporting a preset that is not
+      actually applied.
+    - Replaced the range `Picker` with a `Menu`: a Picker cannot carry an action item
+      beside its options, and the window is no longer a closed set of choices.
+  - Verification:
+    - `xcodebuild ... build` -> BUILD SUCCEEDED, zero warnings.
+    - `xcodebuild ... -only-testing:FRED-UltraTests test` -> TEST SUCCEEDED, 136 tests
+      (5 new: ordering and clamping, window bounds and labels, both-bound filtering, a
+      custom window narrowing every surface, and clamping beyond the data).
+    - `removingAComparisonSeriesDropsItsData` produced no line in the full-run log, which
+      differed from the usual interleaving truncation, so it was re-run in isolation and
+      confirmed passing rather than assumed.
+  - Next candidates: chart image export, and saved workspaces.

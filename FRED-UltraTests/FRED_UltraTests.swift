@@ -466,6 +466,68 @@ struct DateRangeTests {
         #expect(start == Fixture.date("2014-06-30"))
     }
 
+    /// A custom window is ordered and clamped to what the data covers, so a reader
+    /// cannot select an interval with nothing in it.
+    @Test func customWindowsAreOrderedAndClamped() {
+        let coverage = Fixture.date("2010-01-01")...Fixture.date("2020-01-01")
+
+        // Endpoints given backwards are corrected rather than rejected.
+        let reversed = DateWindow.custom(
+            start: Fixture.date("2015-01-01"),
+            end: Fixture.date("2012-01-01"),
+            clampedTo: coverage
+        )
+        #expect(reversed == .custom(start: Fixture.date("2012-01-01"), end: Fixture.date("2015-01-01")))
+
+        // Endpoints outside the data are pulled back to it.
+        let overshooting = DateWindow.custom(
+            start: Fixture.date("1990-01-01"),
+            end: Fixture.date("2030-01-01"),
+            clampedTo: coverage
+        )
+        #expect(overshooting == .custom(start: coverage.lowerBound, end: coverage.upperBound))
+
+        // With no coverage known, the endpoints are only ordered.
+        let unclamped = DateWindow.custom(
+            start: Fixture.date("2030-01-01"),
+            end: Fixture.date("1990-01-01"),
+            clampedTo: nil
+        )
+        #expect(unclamped == .custom(start: Fixture.date("1990-01-01"), end: Fixture.date("2030-01-01")))
+    }
+
+    @Test func windowsReportTheirBoundsAndLabels() {
+        let anchor = Fixture.date("2020-01-01")
+
+        let preset = DateWindow.preset(.oneYear)
+        #expect(preset.label == "1 Year")
+        #expect(preset.isCustom == false)
+        #expect(preset.preset == .oneYear)
+        #expect(preset.bounds(anchoredTo: anchor, calendar: Fixture.calendar).end == nil)
+
+        let custom = DateWindow.custom(start: Fixture.date("2008-01-01"), end: Fixture.date("2010-12-01"))
+        let bounds = custom.bounds(anchoredTo: anchor, calendar: Fixture.calendar)
+        #expect(custom.isCustom)
+        #expect(custom.preset == nil)
+        #expect(bounds.start == Fixture.date("2008-01-01"))
+        #expect(bounds.end == Fixture.date("2010-12-01"))
+        #expect(custom.label.contains("–"))
+    }
+
+    /// An upper bound is what makes "just 2008 to 2010" possible.
+    @Test func filteringHonoursBothBounds() {
+        let points = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4, 5])
+
+        #expect(SeriesAnalytics.filter(points, from: nil, through: nil).count == 5)
+        #expect(SeriesAnalytics.filter(points, from: points[1].date, through: points[3].date).map(\.value) == [2, 3, 4])
+        #expect(SeriesAnalytics.filter(points, from: nil, through: points[1].date).map(\.value) == [1, 2])
+        #expect(SeriesAnalytics.filter(points, from: points[3].date).map(\.value) == [4, 5])
+
+        // A window entirely outside the data yields nothing rather than the nearest rows.
+        #expect(SeriesAnalytics.filter(points, from: Fixture.date("2030-01-01")).isEmpty)
+        #expect(SeriesAnalytics.filter(points, from: nil, through: Fixture.date("1990-01-01")).isEmpty)
+    }
+
     @Test func everyOptionHasAStableIdentifier() {
         let options = DateRangeOption.allCases
         #expect(options.count == 9)
@@ -1199,6 +1261,62 @@ struct SeriesDetailViewModelTests {
     }
 
     /// Anchoring to "now" made every discontinued series render an empty chart.
+    /// A custom interval narrows the whole surface, and exports record which window
+    /// produced them.
+    @Test func aCustomWindowNarrowsEverySurface() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2020-01-01", values: (0..<24).map(Double.init))]),
+            recessionLoader: { [] },
+            relationsLoader: { SeriesRelations(seriesID: $0) }
+        )
+        await viewModel.loadData()
+        #expect(viewModel.visibleObservationCount == 24)
+
+        let coverage = try? #require(viewModel.availableDateRange)
+        #expect(coverage?.lowerBound == Fixture.date("2020-01-01"))
+
+        viewModel.applyCustomWindow(start: Fixture.date("2020-04-01"), end: Fixture.date("2020-09-01"))
+
+        #expect(viewModel.window.isCustom)
+        #expect(viewModel.selectedRange == nil)
+        #expect(viewModel.visibleObservationCount == 6)
+        #expect(viewModel.statistics?.firstValue == 3)
+        #expect(viewModel.statistics?.latestValue == 8)
+        #expect(viewModel.tableRows.count == 6)
+        #expect(viewModel.makeExportPayload().rangeLabel == viewModel.rangeLabel)
+        #expect(viewModel.rangeLabel.contains("–"))
+
+        // Returning to a preset restores the full span.
+        viewModel.updateRange(.all)
+        #expect(viewModel.window.isCustom == false)
+        #expect(viewModel.visibleObservationCount == 24)
+    }
+
+    /// Endpoints beyond the loaded data are clamped rather than emptying the chart.
+    @Test func aCustomWindowBeyondTheDataIsClampedToIt() async {
+        let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2020-01-01", values: [1, 2, 3])]),
+            recessionLoader: { [] },
+            relationsLoader: { SeriesRelations(seriesID: $0) }
+        )
+        await viewModel.loadData()
+
+        viewModel.applyCustomWindow(start: Fixture.date("1990-01-01"), end: Fixture.date("2050-01-01"))
+
+        #expect(viewModel.visibleObservationCount == 3)
+        #expect(viewModel.isWindowEmpty == false)
+    }
+
     @Test func discontinuedSeriesStillPopulateShortWindows() async {
         let series = Fixture.series(
             id: "OLD", units: "Index", frequency: "Monthly",
