@@ -329,3 +329,34 @@ Session log:
       differed from the usual interleaving truncation, so it was re-run in isolation and
       confirmed passing rather than assumed.
   - Next candidates: chart image export, and saved workspaces.
+
+- 2026-08-29 00:45–01:10 CST / branch: repair/full-audit
+  - Focus: /loop iteration 6 — chart image export.
+  - Refactor first:
+    - Extracted `SeriesPlot`, the marks with no chrome and no gestures, out of
+      `SeriesChartView`. The interactive chart and the exported image now render the same
+      view, so a saved picture cannot drift from what the reader was looking at. Without
+      this the export would have been a second, silently diverging copy of the chart.
+  - Added:
+    - `ChartSnapshotView`: the plot wrapped in a title, a subtitle naming every choice
+      behind the picture (series, window, transform, moving average, units, comparison
+      series), and the FRED source attribution its terms of use ask for.
+    - `ExportService.pngData` (2x by default), `pdfData` (single-page vector), and
+      `copyImageToClipboard`, plus a `save(data:...)` panel sharing the presentation rules
+      of the text export.
+    - Share menu entries for PNG, PDF, and Copy Chart Image, and an Opt-Cmd-C command.
+  - Design notes:
+    - The snapshot renders at a fixed size rather than the current window size, so output
+      is reproducible regardless of how the reader has the app arranged.
+    - It paints an explicit background: a transparent PNG dropped onto a dark slide is
+      unreadable.
+    - PDF is offered because a chart pasted into a paper or a deck needs to stay sharp when
+      scaled, which a bitmap cannot do.
+  - Verification:
+    - `xcodebuild ... build` -> BUILD SUCCEEDED, zero warnings.
+    - `xcodebuild ... -only-testing:FRED-UltraTests test` -> TEST SUCCEEDED, 141 tests.
+    - The two render tests do real work rather than only compiling: they assert the PNG
+      magic number and that the PDF parses to exactly one page via CGPDFDocument. Both were
+      confirmed to have actually executed, not merely reported by the suite summary.
+  - Next candidates: saved workspaces (a named set of series, window, and transform), and
+    keyboard-driven search focus.

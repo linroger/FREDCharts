@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import FRED_Ultra
 
@@ -1056,6 +1057,116 @@ struct ExportTests {
     @Test func emptyPayloadIsDetected() {
         let empty = ExportPayload(rangeLabel: "All Time", transform: .level, columns: [])
         #expect(empty.isEmpty)
+    }
+}
+
+// MARK: - Chart Image Export
+
+@MainActor
+struct ChartImageExportTests {
+
+    private func makeViewModel() async -> SeriesDetailViewModel {
+        let series = Fixture.series(id: "GDP", title: "Gross Domestic Product", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2020-01-01", values: (0..<24).map(Double.init))]),
+            recessionLoader: { [] },
+            relationsLoader: { SeriesRelations(seriesID: $0) }
+        )
+        await viewModel.loadData()
+        return viewModel
+    }
+
+    /// Renders for real and checks the PNG magic number, so a broken renderer cannot pass
+    /// as "compiles fine".
+    @Test func chartRendersToRealPNGBytes() async {
+        let viewModel = await makeViewModel()
+        let snapshot = ChartSnapshotView(viewModel: viewModel, size: CGSize(width: 600, height: 400))
+
+        guard let data = ExportService.pngData(from: snapshot, scale: 1) else {
+            Issue.record("The chart produced no PNG data")
+            return
+        }
+
+        #expect(data.count > 1_000)
+        #expect(Array(data.prefix(8)) == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+    }
+
+    /// PDF output must be a real single-page document, not an empty container.
+    @Test func chartRendersToRealPDFBytes() async {
+        let viewModel = await makeViewModel()
+        let size = CGSize(width: 600, height: 400)
+        let snapshot = ChartSnapshotView(viewModel: viewModel, size: size)
+
+        guard let data = ExportService.pdfData(from: snapshot, size: size) else {
+            Issue.record("The chart produced no PDF data")
+            return
+        }
+
+        #expect(data.count > 1_000)
+        #expect(Array(data.prefix(5)) == Array("%PDF-".utf8))
+
+        let document = PDFishDocument(data: data)
+        #expect(document.pageCount == 1)
+    }
+
+    /// The exported image has to stand on its own, so its subtitle names every choice
+    /// behind the picture.
+    @Test func exportSubtitleNamesEveryChoice() async {
+        let viewModel = await makeViewModel()
+
+        let level = viewModel.chartExportSubtitle
+        #expect(level.contains("GDP"))
+        #expect(level.contains("All Time"))
+        #expect(level.contains("Level"))
+        #expect(level.contains("U.S. Dollars"))
+
+        viewModel.updateTransform(.yearOverYear)
+        viewModel.updateMovingAverage(.medium)
+        let transformed = viewModel.chartExportSubtitle
+        #expect(transformed.contains("YoY %"))
+        #expect(transformed.contains("moving average"))
+        #expect(transformed.contains("Percent"))
+
+        viewModel.applyCustomWindow(start: Fixture.date("2020-04-01"), end: Fixture.date("2020-09-01"))
+        #expect(viewModel.chartExportSubtitle.contains("–"))
+
+        #expect(viewModel.chartExportAttribution.contains("Federal Reserve Bank of St. Louis"))
+    }
+
+    @Test func exportFilenameIsSharedAndFileSystemSafe() async {
+        let viewModel = await makeViewModel()
+
+        #expect(viewModel.exportFilenameStem == "gdp-all-time-level")
+        #expect(viewModel.exportFilenameStem.contains(" ") == false)
+
+        viewModel.updateTransform(.periodPercentChange)
+        #expect(viewModel.exportFilenameStem.contains("%-chg"))
+        #expect(ExportService.sanitizedFilename(viewModel.exportFilenameStem).contains("/") == false)
+    }
+
+    @Test func imageFormatsDeclareTheirExtensions() {
+        #expect(ChartImageFormat.png.fileExtension == "png")
+        #expect(ChartImageFormat.pdf.fileExtension == "pdf")
+        #expect(ChartImageFormat.allCases.count == 2)
+    }
+}
+
+/// Minimal PDF page counter, so the test does not need PDFKit just to prove the render
+/// produced a page.
+private struct PDFishDocument {
+    let pageCount: Int
+
+    init(data: Data) {
+        guard let provider = CGDataProvider(data: data as CFData),
+              let document = CGPDFDocument(provider) else {
+            pageCount = 0
+            return
+        }
+        pageCount = document.numberOfPages
     }
 }
 

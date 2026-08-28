@@ -45,6 +45,12 @@ struct FRED_UltraApp: App {
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
                 .disabled(!commandCenter.isSeriesActive)
+
+                Button("Copy Chart Image") {
+                    commandCenter.copyChartImage()
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+                .disabled(!commandCenter.isSeriesActive)
             }
 
             // `CommandMenu` takes no `disabled` modifier, so each item guards itself.

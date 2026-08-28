@@ -13,6 +13,7 @@ final class AppCommandCenter: ObservableObject {
         let exportCSV: () -> Void
         let exportJSON: () -> Void
         let copyToClipboard: () -> Void
+        let copyChartImage: () -> Void
         /// Selects the detail tab at `index`, ignoring out-of-range values.
         let selectTab: (Int) -> Void
     }
@@ -44,5 +45,6 @@ final class AppCommandCenter: ObservableObject {
     func exportCSV() { handlers?.exportCSV() }
     func exportJSON() { handlers?.exportJSON() }
     func copyToClipboard() { handlers?.copyToClipboard() }
+    func copyChartImage() { handlers?.copyChartImage() }
     func selectTab(_ index: Int) { handlers?.selectTab(index) }
 }

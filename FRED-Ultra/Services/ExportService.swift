@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 // MARK: - Export Payload
@@ -246,6 +247,110 @@ enum ExportService {
             return .saved(url)
         } catch {
             AppLogger.export.error("Failed to save export: \(error.localizedDescription, privacy: .public)")
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    // MARK: Image rendering
+
+    /// Renders a view to PNG bytes at `scale`, defaulting to 2x so the result stays crisp
+    /// on a Retina display and when scaled into a document.
+    @MainActor
+    static func pngData<Content: View>(from view: Content, scale: CGFloat = 2) -> Data? {
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = scale
+
+        guard let cgImage = renderer.cgImage else {
+            AppLogger.export.error("Chart image renderer produced no bitmap")
+            return nil
+        }
+
+        let representation = NSBitmapImageRep(cgImage: cgImage)
+        return representation.representation(using: .png, properties: [:])
+    }
+
+    /// Renders a view to a single-page PDF. Vector output stays sharp at any zoom, which
+    /// is what a chart pasted into a paper or a deck needs.
+    @MainActor
+    static func pdfData<Content: View>(from view: Content, size: CGSize) -> Data? {
+        let data = NSMutableData()
+        var mediaBox = CGRect(origin: .zero, size: size)
+
+        guard let consumer = CGDataConsumer(data: data),
+              let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+            AppLogger.export.error("Could not create a PDF context for the chart")
+            return nil
+        }
+
+        let renderer = ImageRenderer(content: view)
+        var rendered = false
+
+        renderer.render { _, draw in
+            context.beginPDFPage(nil)
+            draw(context)
+            context.endPDFPage()
+            rendered = true
+        }
+
+        context.closePDF()
+
+        guard rendered, data.length > 0 else {
+            AppLogger.export.error("Chart PDF render produced no pages")
+            return nil
+        }
+
+        return data as Data
+    }
+
+    /// Copies an image of `view` to the clipboard, ready to paste into notes or a deck.
+    @MainActor
+    static func copyImageToClipboard<Content: View>(_ view: Content, scale: CGFloat = 2) -> Bool {
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = scale
+
+        guard let image = renderer.nsImage else {
+            AppLogger.export.error("Chart image renderer produced no image for the clipboard")
+            return false
+        }
+
+        NSPasteboard.general.clearContents()
+        let wrote = NSPasteboard.general.writeObjects([image])
+        AppLogger.export.info("Copied the chart image to the clipboard")
+        return wrote
+    }
+
+    // MARK: Saving binary output
+
+    /// Save panel for non-text output, sharing the presentation rules of the text variant.
+    @MainActor
+    static func save(data: Data, suggestedName: String, format: ChartImageFormat) async -> ExportOutcome {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = "\(sanitizedFilename(suggestedName)).\(format.fileExtension)"
+        panel.title = "Save Chart as \(format.rawValue)"
+        panel.allowedContentTypes = [format == .png ? .png : .pdf]
+
+        let response: NSApplication.ModalResponse
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow, window.isVisible {
+            response = await withCheckedContinuation { continuation in
+                panel.beginSheetModal(for: window) { continuation.resume(returning: $0) }
+            }
+        } else {
+            response = panel.runModal()
+        }
+
+        guard response == .OK, let url = panel.url else {
+            AppLogger.export.info("Chart image export cancelled by the user")
+            return .cancelled
+        }
+
+        do {
+            try data.write(to: url, options: .atomic)
+            AppLogger.export.info("Saved chart image to \(url.lastPathComponent, privacy: .public)")
+            return .saved(url)
+        } catch {
+            AppLogger.export.error("Failed to save chart image: \(error.localizedDescription, privacy: .public)")
             return .failed(error.localizedDescription)
         }
     }

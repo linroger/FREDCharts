@@ -193,6 +193,20 @@
     "passes": true
   },
   {
+    "id": "feature_chart_image_export",
+    "category": "functional",
+    "description": "The chart can be saved as a PNG or vector PDF, or copied as an image, carrying its own title, window, transform, units, and source attribution.",
+    "steps": [
+      "Open a populated series",
+      "Save the chart as PNG and confirm the file opens as a real image",
+      "Save the chart as PDF and confirm it is a single-page vector document",
+      "Copy the chart image and paste it into another app",
+      "Confirm the exported image names the series, window, transform, and units, and cites FRED",
+      "Confirm the exported picture matches the chart on screen"
+    ],
+    "passes": true
+  },
+  {
     "id": "feature_menu_commands",
     "category": "functional",
     "description": "Data menu commands act on the open series and are disabled when no series is open.",

@@ -394,6 +394,22 @@ struct ScatterPoint: Identifiable, Hashable, Sendable {
     let y: Double
 }
 
+// MARK: - Chart Image Format
+
+enum ChartImageFormat: String, CaseIterable, Identifiable, Sendable {
+    case png = "PNG"
+    case pdf = "PDF"
+
+    var id: String { rawValue }
+
+    var fileExtension: String {
+        switch self {
+        case .png: return "png"
+        case .pdf: return "pdf"
+        }
+    }
+}
+
 // MARK: - Insights
 
 struct SeriesInsight: Identifiable, Hashable, Sendable {

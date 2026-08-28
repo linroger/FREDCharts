@@ -23,6 +23,7 @@ A native macOS desktop app for searching, comparing, transforming, and exporting
 | **衰退阴影** | 按 NBER 口径（USREC）在图表上标注美国衰退区间，与 FRED 官网一致，可在设置中关闭 |
 | **多序列对比** | 单位兼容时统一量纲；单位不兼容时自动切换为指数化对比，并计算相关系数 |
 | **价差模式** | Spread (A − B)：主序列减去各对比序列，用于收益率曲线、实际利率、缺口等；按最近日期对齐，支持不同频率 |
+| **图表导出** | 将图表渲染为 PNG（2x）或矢量 PDF，或直接复制为图片粘贴到文稿/幻灯片；导出的图片自带标题、序列、窗口、变换、单位与数据来源署名 |
 | **数据导出** | CSV / JSON 导出与剪贴板复制，内容与屏幕所见完全一致 |
 | **统一日志** | 覆盖搜索、详情加载、网络、导出与设置操作 |
 
@@ -138,6 +139,7 @@ xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra \
 | ⌘R | 重新下载当前序列 |
 | ⇧⌘E | 导出 CSV |
 | ⇧⌘C | 复制可见数据到剪贴板 |
+| ⌥⌘C | 复制图表图片到剪贴板 |
 | ⌘1 / ⌘2 / ⌘3 / ⌘4 | 按顺序切换可见标签页（Overview / Data / Relationship / Insights；未添加对比序列时 Relationship 不显示） |
 | ⌘, | 打开设置 |
 

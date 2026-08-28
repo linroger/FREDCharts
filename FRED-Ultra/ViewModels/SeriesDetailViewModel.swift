@@ -211,6 +211,37 @@ final class SeriesDetailViewModel: ObservableObject {
         return dates.count
     }
 
+    /// One line naming every choice behind the picture: series, window, transform, units.
+    var chartExportSubtitle: String {
+        var parts = [mainSeries.id, rangeLabel, transform.rawValue]
+
+        if chartMode == .spread {
+            parts.append(ChartMode.spread.rawValue)
+        }
+        if movingAverage != .off {
+            parts.append(movingAverageLabel)
+        }
+        parts.append(displayUnitsLabel)
+
+        if canCompare {
+            parts.append("with \(comparisonSeries.map(\.id).joined(separator: ", "))")
+        }
+
+        return parts.joined(separator: " • ")
+    }
+
+    /// Source line, as FRED's terms of use ask for.
+    var chartExportAttribution: String {
+        "Source: Federal Reserve Economic Data (FRED), Federal Reserve Bank of St. Louis"
+    }
+
+    /// Filename stem shared by data and image exports.
+    var exportFilenameStem: String {
+        "\(mainSeries.id)-\(rangeLabel)-\(transform.shortLabel)"
+            .replacingOccurrences(of: " ", with: "-")
+            .lowercased()
+    }
+
     var movingAverageLabel: String {
         movingAverage.label(for: mainSeries.seriesFrequency)
     }
@@ -511,9 +542,7 @@ final class SeriesDetailViewModel: ObservableObject {
             return .failed("There is nothing to export in the current window.")
         }
 
-        let name = "\(mainSeries.id)-\(rangeLabel)-\(transform.shortLabel)"
-            .replacingOccurrences(of: " ", with: "-")
-            .lowercased()
+        let name = exportFilenameStem
 
         AppLogger.export.info("Exporting \(format.rawValue, privacy: .public) for \(self.mainSeries.id, privacy: .public)")
         return await ExportService.save(content: ExportService.content(for: payload, format: format), suggestedName: name, format: format)

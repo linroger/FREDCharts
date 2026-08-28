@@ -59,6 +59,7 @@ struct SeriesDetailView: View {
                     exportCSV: { export(.csv) },
                     exportJSON: { export(.json) },
                     copyToClipboard: copyToClipboard,
+                    copyChartImage: copyChartImage,
                     selectTab: { index in
                         let tabs = availableTabs
                         guard tabs.indices.contains(index) else { return }
@@ -758,7 +759,11 @@ struct SeriesDetailView: View {
                 Button("Export CSV…") { export(.csv) }
                 Button("Export JSON…") { export(.json) }
                 Divider()
-                Button("Copy to Clipboard") { copyToClipboard() }
+                Button("Save Chart as PNG…") { exportChart(.png) }
+                Button("Save Chart as PDF…") { exportChart(.pdf) }
+                Divider()
+                Button("Copy Data to Clipboard") { copyToClipboard() }
+                Button("Copy Chart Image") { copyChartImage() }
             } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
@@ -792,6 +797,58 @@ struct SeriesDetailView: View {
             case .failed(let message):
                 exportNotice = ExportNotice(title: "Export Failed", message: message)
             }
+        }
+    }
+
+    /// The card that gets rendered: the same marks the reader is looking at, plus the
+    /// context that makes the image readable once it has left the app.
+    private var snapshot: ChartSnapshotView {
+        ChartSnapshotView(viewModel: viewModel, size: ChartSnapshotView.defaultSize)
+    }
+
+    private func exportChart(_ format: ChartImageFormat) {
+        let data: Data?
+        switch format {
+        case .png:
+            data = ExportService.pngData(from: snapshot)
+        case .pdf:
+            data = ExportService.pdfData(from: snapshot, size: ChartSnapshotView.defaultSize)
+        }
+
+        guard let data else {
+            exportNotice = ExportNotice(
+                title: "Could Not Render Chart",
+                message: "The chart image could not be generated. Try again once the chart has finished loading."
+            )
+            return
+        }
+
+        Task {
+            switch await ExportService.save(data: data, suggestedName: viewModel.exportFilenameStem, format: format) {
+            case .saved(let url):
+                exportNotice = ExportNotice(
+                    title: "Chart Saved",
+                    message: "Saved \(format.rawValue) to \(url.lastPathComponent)."
+                )
+            case .cancelled:
+                break
+            case .failed(let message):
+                exportNotice = ExportNotice(title: "Save Failed", message: message)
+            }
+        }
+    }
+
+    private func copyChartImage() {
+        if ExportService.copyImageToClipboard(snapshot) {
+            exportNotice = ExportNotice(
+                title: "Chart Copied",
+                message: "The chart image is on the clipboard, ready to paste."
+            )
+        } else {
+            exportNotice = ExportNotice(
+                title: "Could Not Copy Chart",
+                message: "The chart image could not be generated."
+            )
         }
     }
 
