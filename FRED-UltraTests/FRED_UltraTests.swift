@@ -231,6 +231,136 @@ struct UnitTests {
         #expect(UnitDescriptor(units: "Thousands of Units").canonicalUnits == "Units")
     }
 
+    /// Every magnitude form FRED (or a user) can write must reduce to one multiplier.
+    @Test func magnitudesNormaliseOntoASingleBase() {
+        #expect(UnitDescriptor(units: "Thousands of Dollars").scale == 1_000)
+        #expect(UnitDescriptor(units: "Millions of Dollars").scale == 1_000_000)
+        #expect(UnitDescriptor(units: "Billions of Dollars").scale == 1_000_000_000)
+        #expect(UnitDescriptor(units: "Trillions of Dollars").scale == 1_000_000_000_000)
+
+        // Chained magnitude words multiply.
+        #expect(UnitDescriptor(units: "Hundreds of Millions of Dollars").scale == 100_000_000)
+        #expect(UnitDescriptor(units: "Tens of Thousands of Units").scale == 10_000)
+
+        // An explicit factor in front of a magnitude word.
+        #expect(UnitDescriptor(units: "0.4 Billion Dollars").scale == 400_000_000)
+        #expect(UnitDescriptor(units: "100 Billions of Dollars").scale == 100_000_000_000)
+
+        // A bare literal, with or without digit-group separators or a plural.
+        #expect(UnitDescriptor(units: "1,000,000 Dollars").scale == 1_000_000)
+        #expect(UnitDescriptor(units: "1000000 Dollars").scale == 1_000_000)
+        #expect(UnitDescriptor(units: "1,000,000s of Dollars").scale == 1_000_000)
+
+        // Small literals are quantities, not magnitudes.
+        #expect(UnitDescriptor(units: "Dollars").scale == 1)
+        #expect(UnitDescriptor(units: "U.S. Dollars").scale == 1)
+    }
+
+    /// A rate's magnitude comes from its numerator alone. "Dollars per Million BTU" used
+    /// to pick up "million" and render $3.50 as "$3.5M".
+    @Test func rateDenominatorsDoNotContributeAScale() {
+        let btu = UnitDescriptor(units: "Dollars per Million BTU")
+        #expect(btu.scale == 1)
+        #expect(btu.family == .currency)
+        #expect(btu.denominator == "Million BTU")
+        #expect(btu.canonicalUnits == "U.S. Dollars per Million BTU")
+
+        let births = UnitDescriptor(units: "Number per 1,000 Live Births")
+        #expect(births.scale == 1)
+        #expect(births.denominator == "1,000 Live Births")
+
+        let hourly = ValueFormatter(units: "Dollars per Hour", locale: Locale(identifier: "en_US"))
+        #expect(hourly.formatValue(28.5, compact: false) == "$28.5")
+    }
+
+    /// Two rates measured per different things cannot share an axis, even though both
+    /// are "dollars". Dollars per hour is not comparable with billions of dollars.
+    @Test func ratesAreOnlyComparableWithMatchingDenominators() {
+        let perHour = UnitDescriptor(units: "Dollars per Hour")
+        let perGallon = UnitDescriptor(units: "Dollars per Gallon")
+        let billions = UnitDescriptor(units: "Billions of Dollars")
+
+        #expect(perHour.isComparable(to: perGallon) == false)
+        #expect(perHour.isComparable(to: billions) == false)
+        #expect(perHour.isComparable(to: UnitDescriptor(units: "U.S. Dollars per Hour")))
+    }
+
+    /// Constant-dollar series are a different price basis from nominal ones, however
+    /// FRED words it.
+    @Test func deflatedDollarsAreDistinguishedFromNominal() {
+        let nominal = UnitDescriptor(units: "Current Dollars")
+        let cpiAdjusted = UnitDescriptor(units: "1982-84 CPI Adjusted Dollars")
+        let constantYear = UnitDescriptor(units: "2010 U.S. Dollars")
+        let chained = UnitDescriptor(units: "Chained 2017 Dollars")
+
+        #expect(nominal.currencyBasis == .nominal)
+        #expect(cpiAdjusted.currencyBasis == .real(year: 1982))
+        #expect(constantYear.currencyBasis == .real(year: 2010))
+        #expect(chained.currencyBasis == .chained(year: 2017))
+
+        #expect(nominal.isComparable(to: cpiAdjusted) == false)
+        #expect(nominal.isComparable(to: constantYear) == false)
+        #expect(constantYear.isComparable(to: chained) == false)
+
+        // A year inside a constant-dollar label is a price base, never a multiplier.
+        #expect(constantYear.scale == 1)
+        #expect(cpiAdjusted.scale == 1)
+    }
+
+    /// Basis points are hundredths of a percent, so they normalise onto the percent base.
+    @Test func basisPointsNormaliseOntoThePercentBase() {
+        let basisPoints = UnitDescriptor(units: "Basis Points")
+        #expect(basisPoints.family == .percent)
+        #expect(basisPoints.scale == 0.01)
+        #expect(basisPoints.isComparable(to: UnitDescriptor(units: "Percent")))
+
+        let formatter = ValueFormatter(units: "Basis Points", locale: Locale(identifier: "en_US"))
+        #expect(formatter.formatValue(25, compact: false) == "0.25%")
+        // The published figure stays in basis points in the table and exports.
+        #expect(formatter.formatPrecise(25) == "25")
+    }
+
+    /// An index base period is not a magnitude: none of 1982, 1984, or 100 is a scale.
+    @Test func indexBasePeriodsAreNeverTreatedAsMagnitudes() {
+        for units in ["Index 1982-1984=100", "Index 2017=100", "Index Jan 1990=1", "Index 1995:Q1=100"] {
+            let descriptor = UnitDescriptor(units: units)
+            #expect(descriptor.family == .index)
+            #expect(descriptor.scale == 1)
+            #expect(descriptor.presentationUnits == units)
+        }
+    }
+
+    /// Ratios need more decimal places than a general count; 0.0234 must not read 0.02.
+    @Test func ratiosGetTheirOwnPrecision() {
+        let descriptor = UnitDescriptor(units: "Ratio")
+        #expect(descriptor.family == .ratio)
+
+        let formatter = ValueFormatter(units: "Ratio", locale: Locale(identifier: "en_US"))
+        #expect(formatter.formatValue(0.0234, compact: false) == "0.0234")
+        #expect(formatter.formatValue(0.0234, compact: true) == "0.02")
+    }
+
+    /// A bare "Thousands" has nothing left once the magnitude is stripped, and labelling
+    /// the scaled value "Thousands" would overstate it a thousandfold.
+    @Test func bareMagnitudesAreRelabelledAfterScaling() {
+        let descriptor = UnitDescriptor(units: "Thousands")
+        #expect(descriptor.scale == 1_000)
+        #expect(descriptor.canonicalUnits == "Units")
+        #expect(descriptor.presentationUnits == "Units")
+    }
+
+    /// Percent variants stay in the percent family whatever qualifies them.
+    @Test func percentVariantsAreRecognised() {
+        for units in [
+            "Percent", "Percent Change at Annual Rate", "Percent of Total",
+            "Percent of Working-Age Population", "Percent per Annum",
+            "Percent Change from Quarter One Year Ago"
+        ] {
+            #expect(UnitDescriptor(units: units).family == .percent)
+            #expect(UnitDescriptor(units: units).scale == 1)
+        }
+    }
+
     @Test func descriptorCacheReturnsEqualValues() {
         let first = UnitDescriptor.cached(units: "Millions of Dollars")
         let second = UnitDescriptor.cached(units: "Millions of Dollars")
@@ -1561,6 +1691,141 @@ struct SeriesDetailViewModelTests {
         #expect(viewModel.visibleObservationCount == 2_000)
         #expect(viewModel.tableRows.count == 2_000)
         #expect(viewModel.makeExportPayload().columns[0].points.count == 2_000)
+    }
+}
+
+// MARK: - Series Relations
+
+@MainActor
+struct SeriesRelationsTests {
+
+    private func relations(
+        seriesID: String = "GDP",
+        related: [FREDSeries] = []
+    ) -> SeriesRelations {
+        SeriesRelations(
+            seriesID: seriesID,
+            categories: [FREDCategory(id: 106, name: "GDP/GNP", parentId: 18)],
+            release: FREDRelease(id: 53, name: "Gross Domestic Product", pressRelease: true, link: "https://www.bea.gov/data/gdp/gross-domestic-product"),
+            tags: [
+                FREDTag(name: "usa", groupId: "geo", popularity: 100),
+                FREDTag(name: "public domain: citation requested", groupId: "cc", popularity: 99),
+                FREDTag(name: "gdp", groupId: "gen", popularity: 82)
+            ],
+            relatedSeries: related
+        )
+    }
+
+    @Test func categoriesAndReleasesDecodeFromFREDShapes() throws {
+        let categoryJSON = #"{"categories":[{"id":106,"name":"GDP/GNP","parent_id":18}]}"#
+        let categories = try JSONDecoder().decode(FREDCategoriesResponse.self, from: Data(categoryJSON.utf8))
+        #expect(categories.categories.first?.id == 106)
+        #expect(categories.categories.first?.parentId == 18)
+
+        let releaseJSON = #"{"releases":[{"id":53,"name":"Gross Domestic Product","press_release":true,"link":"https://www.bea.gov/data/gdp"}]}"#
+        let releases = try JSONDecoder().decode(FREDReleasesResponse.self, from: Data(releaseJSON.utf8))
+        #expect(releases.releases.first?.name == "Gross Domestic Product")
+        #expect(releases.releases.first?.url != nil)
+
+        let tagJSON = #"{"tags":[{"name":"usa","group_id":"geo","popularity":100}]}"#
+        let tags = try JSONDecoder().decode(FREDTagsResponse.self, from: Data(tagJSON.utf8))
+        #expect(tags.tags.first?.groupLabel == "Geography")
+    }
+
+    /// Licence and citation tags are noise in a research UI.
+    @Test func onlyDescriptiveTagsAreSurfaced() {
+        let descriptive = relations().descriptiveTags
+        #expect(descriptive.map(\.name) == ["usa", "gdp"])
+        #expect(descriptive.contains { $0.name.contains("citation") } == false)
+    }
+
+    /// Suggestions that can share an axis are worth more than merely popular ones.
+    @Test func relatedSeriesRankComparableUnitsFirst() {
+        let gdp = Fixture.series(id: "GDP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+        let popularButIncomparable = Fixture.series(id: "A191RL1Q225SBEA", units: "Percent Change from Preceding Period")
+        let comparable = Fixture.series(id: "GNP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+
+        let ranked = relations(related: [popularButIncomparable, comparable]).relatedSeriesRanked(comparableWith: gdp)
+
+        #expect(ranked.map(\.id) == ["GNP", "A191RL1Q225SBEA"])
+    }
+
+    @Test func relationsLoadLazilyAndOnlyOnce() async {
+        let counter = CallCounter()
+        let series = Fixture.series(id: "GDP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+        let sibling = Fixture.series(id: "GNP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2024-01-01", values: [1, 2, 3])]),
+            recessionLoader: { [] },
+            relationsLoader: { id in
+                counter.increment()
+                return SeriesRelations(seriesID: id, relatedSeries: [sibling])
+            }
+        )
+
+        await viewModel.loadData()
+        // Loading the series must not pay for the relations lookup.
+        #expect(counter.count == 0)
+        #expect(viewModel.relations == nil)
+
+        await viewModel.loadRelationsIfNeeded()
+        #expect(counter.count == 1)
+        #expect(viewModel.suggestedRelatedSeries.map(\.id) == ["GNP"])
+
+        await viewModel.loadRelationsIfNeeded()
+        #expect(counter.count == 1)
+    }
+
+    /// A series already on the chart is not a useful suggestion.
+    @Test func seriesAlreadyChartedAreNotSuggested() async {
+        let series = Fixture.series(id: "GDP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+        let sibling = Fixture.series(id: "GNP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([
+                series.id: Fixture.monthly(start: "2024-01-01", values: [1, 2, 3]),
+                sibling.id: Fixture.monthly(start: "2024-01-01", values: [4, 5, 6])
+            ]),
+            recessionLoader: { [] },
+            relationsLoader: { id in SeriesRelations(seriesID: id, relatedSeries: [sibling]) }
+        )
+
+        await viewModel.loadData()
+        await viewModel.loadRelationsIfNeeded()
+        #expect(viewModel.suggestedRelatedSeries.count == 1)
+
+        await viewModel.addSeries(sibling)
+        #expect(viewModel.suggestedRelatedSeries.isEmpty)
+    }
+
+    /// Missing context is not an error; the section simply does not appear.
+    @Test func absentRelationsAreEmptyRatherThanFatal() async {
+        let series = Fixture.series(id: "OBSCURE")
+        let viewModel = SeriesDetailViewModel(
+            series: series,
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([series.id: Fixture.monthly(start: "2024-01-01", values: [1, 2])]),
+            recessionLoader: { [] },
+            relationsLoader: { id in SeriesRelations(seriesID: id) }
+        )
+
+        await viewModel.loadData()
+        await viewModel.loadRelationsIfNeeded()
+
+        #expect(viewModel.relations?.isEmpty == true)
+        #expect(viewModel.suggestedRelatedSeries.isEmpty)
+        #expect(viewModel.errorMessage == nil)
     }
 }
 

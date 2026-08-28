@@ -15,6 +15,8 @@ final class SeriesDetailViewModel: ObservableObject {
     /// Supplies the NBER recession indicator. Returns an empty array on failure —
     /// missing shading is a cosmetic loss and must never fail a series load.
     typealias RecessionLoader = @Sendable () async -> [SeriesDataPoint]
+    /// Supplies category, release, tag, and sibling-series context for one series.
+    typealias RelationsLoader = @Sendable (_ seriesId: String) async -> SeriesRelations
 
     // MARK: Inputs
 
@@ -45,6 +47,8 @@ final class SeriesDetailViewModel: ObservableObject {
     @Published private(set) var showsRecessionShading: Bool
     /// Recession bands already clipped to the visible window.
     @Published private(set) var recessionIntervals: [DateInterval] = []
+    @Published private(set) var relations: SeriesRelations?
+    @Published private(set) var isLoadingRelations = false
 
     // MARK: Storage
 
@@ -71,6 +75,7 @@ final class SeriesDetailViewModel: ObservableObject {
 
     private let loader: ObservationsLoader
     private let recessionLoader: RecessionLoader
+    private let relationsLoader: RelationsLoader
     private let calendar: Calendar
     private let chartPointBudget: Int
 
@@ -85,6 +90,10 @@ final class SeriesDetailViewModel: ObservableObject {
         (try? await FREDService.shared.observations(seriesId: FREDService.recessionIndicatorSeriesID)) ?? []
     }
 
+    nonisolated static let defaultRelationsLoader: RelationsLoader = { seriesId in
+        (try? await FREDService.shared.relations(for: seriesId)) ?? SeriesRelations(seriesID: seriesId)
+    }
+
     init(
         series: FREDSeries,
         comparisonSeries: [FREDSeries] = [],
@@ -95,7 +104,8 @@ final class SeriesDetailViewModel: ObservableObject {
         chartPointBudget: Int = SeriesDetailViewModel.defaultChartPointBudget,
         showsRecessionShading: Bool = true,
         loader: @escaping ObservationsLoader = SeriesDetailViewModel.defaultLoader,
-        recessionLoader: @escaping RecessionLoader = SeriesDetailViewModel.defaultRecessionLoader
+        recessionLoader: @escaping RecessionLoader = SeriesDetailViewModel.defaultRecessionLoader,
+        relationsLoader: @escaping RelationsLoader = SeriesDetailViewModel.defaultRelationsLoader
     ) {
         self.mainSeries = series
         self.comparisonSeries = comparisonSeries
@@ -106,6 +116,7 @@ final class SeriesDetailViewModel: ObservableObject {
         self.showsRecessionShading = showsRecessionShading
         self.loader = loader
         self.recessionLoader = recessionLoader
+        self.relationsLoader = relationsLoader
         self.fullHistory = initialHistory
 
         if !initialHistory.isEmpty {
@@ -286,6 +297,35 @@ final class SeriesDetailViewModel: ObservableObject {
         if recessionSource.isEmpty {
             AppLogger.detail.info("Recession indicator unavailable; chart shading is omitted")
         }
+    }
+
+    /// Loads the series' category, release, tag, and sibling context.
+    ///
+    /// Deliberately lazy — it costs four requests, which is not worth spending for a
+    /// reader who never opens the Insights tab.
+    func loadRelationsIfNeeded() async {
+        guard relations == nil, !isLoadingRelations else { return }
+
+        isLoadingRelations = true
+        defer { isLoadingRelations = false }
+
+        let seriesId = mainSeries.id
+        let loaded = await relationsLoader(seriesId)
+
+        // The primary series can change only by opening a different detail view, but
+        // guard anyway rather than attaching another series' context.
+        guard seriesId == mainSeries.id else { return }
+        relations = loaded
+    }
+
+    /// Related series that are not already on the chart, most chartable first.
+    var suggestedRelatedSeries: [FREDSeries] {
+        guard let relations else { return [] }
+
+        let present = Set(allSeries.map(\.id))
+        return relations
+            .relatedSeriesRanked(comparableWith: mainSeries)
+            .filter { !present.contains($0.id) }
     }
 
     func setRecessionShading(_ enabled: Bool) async {

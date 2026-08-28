@@ -496,6 +496,8 @@ struct SeriesDetailView: View {
                     }
                 }
 
+                relatedSeriesSection
+
                 GroupBox("Series Metadata") {
                     VStack(alignment: .leading, spacing: 10) {
                         InfoRow(label: "Series ID", value: viewModel.mainSeries.id)
@@ -525,6 +527,122 @@ struct SeriesDetailView: View {
             }
             .padding(20)
         }
+        .task {
+            await viewModel.loadRelationsIfNeeded()
+        }
+    }
+
+    /// Category, release, tags, and sibling series — the context that turns a single
+    /// series into a starting point rather than a dead end.
+    @ViewBuilder
+    private var relatedSeriesSection: some View {
+        if viewModel.isLoadingRelations {
+            GroupBox("Related Series") {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking up related series…").foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 6)
+            }
+        } else if let relations = viewModel.relations, !relations.isEmpty {
+            GroupBox("Related Series") {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let category = relations.primaryCategory {
+                        InfoRow(label: "Category", value: category.name)
+                    }
+
+                    if let release = relations.release {
+                        HStack(alignment: .top) {
+                            Text("Release")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 150, alignment: .leading)
+                            if let url = release.url {
+                                Link(release.name, destination: url)
+                                    .font(.callout)
+                            } else {
+                                Text(release.name).font(.callout)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+
+                    if !relations.descriptiveTags.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Tags")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            FlowingTagList(items: relations.descriptiveTags.prefix(10).map(\.name)) { tag in
+                                Text(tag)
+                                    .font(.caption)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(.quaternary.opacity(0.5), in: Capsule())
+                            }
+                        }
+                    }
+
+                    let suggestions = viewModel.suggestedRelatedSeries
+                    if suggestions.isEmpty {
+                        Text("No further series in this category.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Divider()
+
+                        Text("From the same category, most used first. Comparable units are listed before the rest.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        ForEach(suggestions.prefix(8)) { series in
+                            relatedSeriesRow(series)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private func relatedSeriesRow(_ series: FREDSeries) -> some View {
+        let comparable = viewModel.mainSeries.unitDescriptor.isComparable(to: series.unitDescriptor)
+
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(series.title)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(series.id)
+                        .font(.caption.monospaced())
+                    Text("•").foregroundStyle(.tertiary)
+                    Text(series.units.isEmpty ? "Units n/a" : series.units)
+                        .font(.caption)
+                    if comparable {
+                        Text("shares units")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.green.opacity(0.15), in: Capsule())
+                    }
+                }
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("Compare") {
+                Task { await viewModel.addSeries(series) }
+            }
+            .controlSize(.small)
+            .help(comparable
+                  ? "Add \(series.id) to the chart on a shared axis"
+                  : "Add \(series.id); differing units switch the chart to an index comparison")
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: States

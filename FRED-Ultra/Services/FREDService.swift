@@ -98,6 +98,7 @@ actor FREDService {
 
     private var observationCache: [String: CacheEntry] = [:]
     private var seriesInfoCache: [String: FREDSeries] = [:]
+    private var relationsCache: [String: SeriesRelations] = [:]
 
     init(
         session: URLSession? = nil,
@@ -242,9 +243,115 @@ actor FREDService {
         }
     }
 
+    /// Categories, release, tags, and sibling series for one series.
+    ///
+    /// Four requests, so the result is memoised for the lifetime of the process. Failures
+    /// of the individual parts degrade rather than throw: a series with no category still
+    /// reports its release, and a series with neither still reports its tags.
+    func relations(for seriesId: String, relatedLimit: Int = 12) async throws -> SeriesRelations {
+        if let cached = relationsCache[seriesId] {
+            return cached
+        }
+
+        let key = try await resolvedAPIKey()
+
+        async let categories = fetchCategories(seriesId: seriesId, key: key)
+        async let release = fetchRelease(seriesId: seriesId, key: key)
+        async let tags = fetchTags(seriesId: seriesId, key: key)
+
+        let resolvedCategories = await categories
+        let siblings: [FREDSeries]
+
+        if let category = resolvedCategories.first {
+            // One extra, because the series itself is almost always the most popular
+            // member of its own category.
+            siblings = await fetchCategorySeries(
+                categoryId: category.id,
+                key: key,
+                limit: relatedLimit + 1
+            ).filter { $0.id != seriesId }
+        } else {
+            siblings = []
+        }
+
+        let relations = SeriesRelations(
+            seriesID: seriesId,
+            categories: resolvedCategories,
+            release: await release,
+            tags: await tags,
+            relatedSeries: Array(siblings.prefix(relatedLimit))
+        )
+
+        relationsCache[seriesId] = relations
+        AppLogger.network.info(
+            "Loaded relations for \(seriesId, privacy: .public): \(relations.relatedSeries.count) related series"
+        )
+        return relations
+    }
+
+    private func fetchCategories(seriesId: String, key: String) async -> [FREDCategory] {
+        guard let url = try? makeURL(
+            path: "series/categories",
+            queryItems: [
+                URLQueryItem(name: "series_id", value: seriesId),
+                URLQueryItem(name: "api_key", value: key),
+                URLQueryItem(name: "file_type", value: "json")
+            ]
+        ) else { return [] }
+
+        let response: FREDCategoriesResponse? = try? await request(url)
+        return response?.categories ?? []
+    }
+
+    private func fetchRelease(seriesId: String, key: String) async -> FREDRelease? {
+        guard let url = try? makeURL(
+            path: "series/release",
+            queryItems: [
+                URLQueryItem(name: "series_id", value: seriesId),
+                URLQueryItem(name: "api_key", value: key),
+                URLQueryItem(name: "file_type", value: "json")
+            ]
+        ) else { return nil }
+
+        let response: FREDReleasesResponse? = try? await request(url)
+        return response?.releases.first
+    }
+
+    private func fetchTags(seriesId: String, key: String) async -> [FREDTag] {
+        guard let url = try? makeURL(
+            path: "series/tags",
+            queryItems: [
+                URLQueryItem(name: "series_id", value: seriesId),
+                URLQueryItem(name: "api_key", value: key),
+                URLQueryItem(name: "file_type", value: "json")
+            ]
+        ) else { return [] }
+
+        let response: FREDTagsResponse? = try? await request(url)
+        return response?.tags ?? []
+    }
+
+    private func fetchCategorySeries(categoryId: Int, key: String, limit: Int) async -> [FREDSeries] {
+        guard let url = try? makeURL(
+            path: "category/series",
+            queryItems: [
+                URLQueryItem(name: "category_id", value: String(categoryId)),
+                URLQueryItem(name: "api_key", value: key),
+                URLQueryItem(name: "file_type", value: "json"),
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "order_by", value: "popularity"),
+                URLQueryItem(name: "sort_order", value: "desc")
+            ]
+        ) else { return [] }
+
+        let response: FREDSearchResponse? = try? await request(url)
+        return response?.series ?? []
+    }
+
     func clearCaches() {
         observationCache.removeAll()
         seriesInfoCache.removeAll()
+        relationsCache.removeAll()
         AppLogger.network.info("Cleared cached FRED responses")
     }
 

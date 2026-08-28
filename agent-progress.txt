@@ -211,3 +211,54 @@ Session log:
       the full spread-mode surface).
   - Next candidates: scatter/regression view between two series (Phillips curve, Okun's
     law) with R-squared, an explicit custom date range, and chart image export.
+
+- 2026-08-28 08:45–23:20 CST / branch: repair/full-audit
+  - Focus: /loop iteration 3 — the two things the user named: unit parsing/normalization,
+    and a schema for related data series.
+  - Method note: before writing the parser I sampled ~350 real FRED series and collected
+    the 43 distinct unit strings they actually publish. That sample, not guesswork, is
+    what the parser and its tests are built against.
+  - Live bugs the sample exposed:
+    - `Dollars per Million BTU` and `U.S. Dollars per Million Metric British Thermal Unit`
+      picked up "million" from the *denominator* as a scale, so $3.50/MMBTU rendered as
+      "$3.5M". Two more forms hit the same path.
+    - `Dollars per Hour` (37 of the sampled series) was canonicalised to "U.S. Dollars" and
+      therefore judged interchangeable with `Billions of Dollars` — a $28 wage would share
+      an axis with $29T of GDP and the app would call the units compatible.
+    - `2010 U.S. Dollars` and `1982-84 CPI Adjusted Dollars` were treated as nominal, so
+      constant-dollar and current-dollar series could be plotted together.
+    - A bare `Thousands` was scaled by 1,000 while still being labelled "Thousands".
+  - Unit work:
+    - Split every unit string on its first " per " and take family and magnitude from the
+      numerator only; the denominator is retained and must match for two units to be
+      comparable.
+    - New `MagnitudeParser` handling word chains ("Hundreds of Millions" = 1e8), explicit
+      factors ("0.4 Billion", "100 Billions"), and bare literals ("1,000,000",
+      "1,000,000s"), while never reading a four-digit year or an index base period as a
+      multiplier.
+    - Basis points normalise onto the percent base (25bp charts as 0.25%), with the
+      published figure preserved in the table and exports.
+    - New `.ratio` family so a ratio of 0.0234 is not rounded to 0.02.
+  - Mistake caught by a test: period-stripping for abbreviations ("U.S." -> "us") was also
+    eating decimal points, so "0.4 Billion" parsed as 4 billion — an order of magnitude
+    out. Periods between digits are now preserved, mirroring the digit-group comma rule.
+  - Related-series work:
+    - Confirmed the shapes of `series/categories`, `series/release`, `series/tags`, and
+      `category/series` against the live API first.
+    - New schema: `FREDCategory`, `FREDRelease`, `FREDTag` (with group labels), and
+      `SeriesRelations`.
+    - `FREDService.relations(for:)` fetches the three context calls concurrently, then
+      pulls category siblings by popularity. Each part degrades independently, and the
+      whole result is memoised.
+    - The Insights tab shows category, a linked release, descriptive tags (licence and
+      citation tags filtered out), and sibling series ranked so unit-comparable ones come
+      first, each with a one-click Compare.
+    - Loading is lazy: four extra requests are not spent for a reader who never opens
+      Insights.
+  - Verification:
+    - `xcodebuild ... build` -> BUILD SUCCEEDED, zero warnings.
+    - `xcodebuild ... -only-testing:FRED-UltraTests test` -> TEST SUCCEEDED, 124 tests
+      (15 new: every magnitude form above, the per-clause rules, deflated-dollar bases,
+      basis points, index base periods, ratios, plus the relations schema and lazy load).
+  - Next candidates: scatter/regression view between two series with R-squared, an explicit
+    custom date range, and chart image export.

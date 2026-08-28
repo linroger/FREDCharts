@@ -49,6 +49,32 @@
     "passes": true
   },
   {
+    "id": "feature_unit_normalization",
+    "category": "functional",
+    "description": "Every unit string is parsed into family, multiplier, canonical name, and rate denominator, and normalized onto a single base.",
+    "steps": [
+      "Open series published in thousands, millions, and billions and confirm they share one axis correctly",
+      "Open a rate series such as Dollars per Million BTU and confirm no magnitude is taken from the denominator",
+      "Confirm Dollars per Hour is not offered as comparable with Billions of Dollars",
+      "Confirm a constant-dollar series is not treated as nominal",
+      "Confirm an index base period is never read as a multiplier"
+    ],
+    "passes": true
+  },
+  {
+    "id": "feature_related_series",
+    "category": "functional",
+    "description": "The Insights tab shows a series' category, release, tags, and sibling series, with one-click comparison.",
+    "steps": [
+      "Open a series and switch to the Insights tab",
+      "Confirm the category, release link, and descriptive tags are shown",
+      "Confirm related series from the same category are listed, comparable units first",
+      "Add one with Compare and confirm it joins the chart and leaves the suggestion list",
+      "Confirm a series with no category still loads without error"
+    ],
+    "passes": true
+  },
+  {
     "id": "feature_series_analytics",
     "category": "functional",
     "description": "Series detail shows charting, a sortable data table, and calculated statistics that are correct and clearly labelled.",

@@ -17,6 +17,7 @@ A native macOS desktop app for searching, comparing, transforming, and exporting
 | **序列详情** | 关键指标、交互式图表、原始观测表、洞察卡片三个标签页 |
 | **数据变换** | Level / Change / % Change / YoY % / Index (Start = 100) 五种变换 |
 | **趋势线** | 可选的移动平均叠加线，窗口长度随数据频率自动缩放 |
+| **相关序列** | 展示所属分类、发布源（Release）、标签，并推荐同分类下的相关序列，单位可比者优先，一键加入对比 |
 | **衰退阴影** | 按 NBER 口径（USREC）在图表上标注美国衰退区间，与 FRED 官网一致，可在设置中关闭 |
 | **多序列对比** | 单位兼容时统一量纲；单位不兼容时自动切换为指数化对比，并计算相关系数 |
 | **价差模式** | Spread (A − B)：主序列减去各对比序列，用于收益率曲线、实际利率、缺口等；按最近日期对齐，支持不同频率 |
@@ -164,6 +165,33 @@ xcodebuild -project FRED-Ultra.xcodeproj -scheme FRED-Ultra \
 - **可比性**：`Billions of Dollars` 与 `Current U.S. Dollars` 可比（统一换算为美元）；`Chained 2017 Dollars` 与名义美元**不可比**，因为价格基准不同。
 - **不可比单位**：添加对比序列时若单位不可比，应用会自动切换到 `Index (Start = 100)` 并给出提示；若用户已手动选择过变换，则尊重用户选择并显示警告，绝不把不同量纲画在同一坐标轴上。
 - **相关系数**：对比模式下计算主序列与各对比序列的 Pearson 相关系数，按最近日期对齐（月度 vs 季度等不同频率也能正确配对）。
+
+### 单位解析与归一化 | Unit parsing & normalization
+
+所有单位字符串都会解析为「量纲族 + 倍数 + 规范名称 + 分母」四要素，并归一到同一基准：
+
+| 输入 | 倍数 | 规范单位 |
+|------|------|----------|
+| `Thousands of Dollars` | 1e3 | U.S. Dollars |
+| `Billions of Dollars` | 1e9 | U.S. Dollars |
+| `Hundreds of Millions of Dollars` | 1e8 | U.S. Dollars |
+| `Tens of Thousands of Units` | 1e4 | Units |
+| `0.4 Billion Dollars` | 4e8 | U.S. Dollars |
+| `100 Billions of Dollars` | 1e11 | U.S. Dollars |
+| `1,000,000 Dollars` / `1000000 Dollars` / `1,000,000s of Dollars` | 1e6 | U.S. Dollars |
+| `Basis Points` | 0.01 | Percent |
+| `Thousands`（裸量纲） | 1e3 | Units |
+| `Index 1982-1984=100` | 1 | Index 1982-1984=100 |
+| `Ratio` | 1 | Ratio（4 位小数） |
+
+**关键规则：**
+
+- **`per` 子句单独处理。** 倍数与量纲族只取分子。`Dollars per Million BTU` 的 `million` 属于分母，不参与缩放——此前会把 $3.50 显示为 `$3.5M`。
+- **分母必须一致才可比。** `Dollars per Hour` 与 `Dollars per Gallon` 都是「美元」，但不可同轴；与 `Billions of Dollars` 同样不可比。
+- **年份不是倍数。** `2010 U.S. Dollars`、`1982-84 CPI Adjusted Dollars`、`Index 2017=100` 中的四位数字识别为价格基期或基准期，倍数保持 1。
+- **不变价与现价区分。** `Chained 2017 Dollars`、`2010 U.S. Dollars`、`1982-84 CPI Adjusted Dollars` 均视为不变价，不与名义美元混同。
+- **小数点保留。** 缩写中的点会被去除（`U.S.` → `us`），但数字之间的小数点保留，否则 `0.4 Billion` 会被解析为 40 亿。
+- **基点归一到百分比。** 25bp 在图表上显示为 `0.25%`；数据表与导出仍保留原始发布值 `25`。
 
 ### 价差模式 | Spread mode
 
