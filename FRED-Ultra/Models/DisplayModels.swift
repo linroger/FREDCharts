@@ -268,6 +268,78 @@ enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Regression
+
+/// Ordinary least squares fit between two aligned series.
+struct RegressionResult: Equatable, Sendable {
+    let slope: Double
+    let intercept: Double
+    /// Share of the dependent series' variance the fit explains, 0–1.
+    let rSquared: Double
+    let standardErrorOfSlope: Double?
+    let sampleCount: Int
+
+    init(slope: Double, intercept: Double, rSquared: Double, standardErrorOfSlope: Double?, sampleCount: Int) {
+        self.slope = slope
+        self.intercept = intercept
+        self.rSquared = rSquared
+        self.standardErrorOfSlope = standardErrorOfSlope
+        self.sampleCount = sampleCount
+    }
+
+    /// Slope divided by its standard error. Roughly, |t| above 2 is the conventional
+    /// threshold for "distinguishable from no relationship at all".
+    var tStatistic: Double? {
+        guard let standardErrorOfSlope, standardErrorOfSlope > 0 else { return nil }
+        let value = slope / standardErrorOfSlope
+        return value.isFinite ? value : nil
+    }
+
+    /// True when the slope is at least twice its standard error.
+    var isSlopeDistinguishableFromZero: Bool {
+        guard let tStatistic else { return false }
+        return abs(tStatistic) >= 2
+    }
+
+    var formattedRSquared: String {
+        String(format: "%.3f", rSquared)
+    }
+
+    var formattedTStatistic: String {
+        guard let tStatistic else { return "n/a" }
+        return String(format: "%+.2f", tStatistic)
+    }
+
+    /// Plain-language reading of the fit, stated as a magnitude rather than a coefficient.
+    func interpretation(xUnits: String, yUnits: String) -> String {
+        let strength: String
+        switch rSquared {
+        case 0.7...: strength = "explains most of"
+        case 0.4..<0.7: strength = "explains much of"
+        case 0.15..<0.4: strength = "explains some of"
+        default: strength = "explains little of"
+        }
+
+        let direction = slope >= 0 ? "rise" : "fall"
+        let magnitude = String(format: "%.3g", abs(slope))
+        let caveat = isSlopeDistinguishableFromZero
+            ? ""
+            : " The slope is small relative to its own uncertainty, so treat it as suggestive at best."
+
+        return "A one-\(xUnits.lowercased()) increase goes with a \(magnitude) \(yUnits.lowercased()) \(direction), "
+            + "and the fit \(strength) the variation across \(sampleCount) aligned observations.\(caveat)"
+    }
+}
+
+/// One plotted point of a scatter, carrying its date so the chart can shade by time.
+struct ScatterPoint: Identifiable, Hashable, Sendable {
+    var id: Date { date }
+
+    let date: Date
+    let x: Double
+    let y: Double
+}
+
 // MARK: - Insights
 
 struct SeriesInsight: Identifiable, Hashable, Sendable {

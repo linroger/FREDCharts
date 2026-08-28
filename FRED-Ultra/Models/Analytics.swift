@@ -346,11 +346,19 @@ enum SeriesAnalytics {
         return gaps[middle]
     }
 
-    /// Pairs two series by nearest observation date.
+    /// One date at which both series have a reading.
+    struct AlignedObservation: Hashable, Sendable {
+        let date: Date
+        let lhs: Double
+        let rhs: Double
+    }
+
+    /// Pairs two series by nearest observation date, keeping the date.
     ///
     /// Economic series rarely share a calendar (monthly CPI vs quarterly GDP), so exact
-    /// date joins would report "no overlap" for most real comparisons.
-    static func alignedPairs(_ lhs: [SeriesDataPoint], _ rhs: [SeriesDataPoint]) -> [(Double, Double)] {
+    /// date joins would report "no overlap" for most real comparisons. The date is
+    /// retained so a scatter can show how a relationship moved over time.
+    static func alignedObservations(_ lhs: [SeriesDataPoint], _ rhs: [SeriesDataPoint]) -> [AlignedObservation] {
         guard !lhs.isEmpty, !rhs.isEmpty else { return [] }
 
         let lhsSpacing = medianSpacing(lhs) ?? 86_400
@@ -358,12 +366,12 @@ enum SeriesAnalytics {
         let tolerance = Swift.max(Swift.max(lhsSpacing, rhsSpacing) * 0.6, 86_400)
 
         // Drive the join from the sparser series so each of its points is used at most once.
-        let driving = lhs.count <= rhs.count ? lhs : rhs
-        let lookup = lhs.count <= rhs.count ? rhs : lhs
         let drivingIsLeft = lhs.count <= rhs.count
+        let driving = drivingIsLeft ? lhs : rhs
+        let lookup = drivingIsLeft ? rhs : lhs
 
-        var pairs: [(Double, Double)] = []
-        pairs.reserveCapacity(driving.count)
+        var matches: [AlignedObservation] = []
+        matches.reserveCapacity(driving.count)
         var searchIndex = 0
 
         for point in driving {
@@ -376,10 +384,82 @@ enum SeriesAnalytics {
             let candidate = lookup[searchIndex]
             guard abs(candidate.date.timeIntervalSince(point.date)) <= tolerance else { continue }
 
-            pairs.append(drivingIsLeft ? (point.value, candidate.value) : (candidate.value, point.value))
+            matches.append(
+                AlignedObservation(
+                    date: point.date,
+                    lhs: drivingIsLeft ? point.value : candidate.value,
+                    rhs: drivingIsLeft ? candidate.value : point.value
+                )
+            )
         }
 
-        return pairs
+        return matches
+    }
+
+    static func alignedPairs(_ lhs: [SeriesDataPoint], _ rhs: [SeriesDataPoint]) -> [(Double, Double)] {
+        alignedObservations(lhs, rhs).map { ($0.lhs, $0.rhs) }
+    }
+
+    // MARK: Regression
+
+    /// Ordinary least squares fit of `y = intercept + slope * x`.
+    ///
+    /// Reported alongside a scatter so a relationship can be read as a magnitude — "a one
+    /// point rise in unemployment goes with a 0.4 point fall in inflation" — rather than
+    /// only as a correlation coefficient, which says nothing about size.
+    ///
+    /// Returns `nil` when the fit is not defined: fewer than three points, or an x-series
+    /// with no variation, which would divide by zero.
+    static func linearRegression(_ observations: [AlignedObservation]) -> RegressionResult? {
+        guard observations.count >= 3 else { return nil }
+
+        let count = Double(observations.count)
+        let meanX = observations.reduce(0.0) { $0 + $1.rhs } / count
+        let meanY = observations.reduce(0.0) { $0 + $1.lhs } / count
+
+        var sumSquaresX = 0.0
+        var sumProducts = 0.0
+        var totalSumSquaresY = 0.0
+
+        for observation in observations {
+            let deltaX = observation.rhs - meanX
+            let deltaY = observation.lhs - meanY
+            sumSquaresX += deltaX * deltaX
+            sumProducts += deltaX * deltaY
+            totalSumSquaresY += deltaY * deltaY
+        }
+
+        guard sumSquaresX > 0 else { return nil }
+
+        let slope = sumProducts / sumSquaresX
+        let intercept = meanY - slope * meanX
+        guard slope.isFinite, intercept.isFinite else { return nil }
+
+        // Residual sum of squares, from which both R² and the slope's standard error follow.
+        var residualSumSquares = 0.0
+        for observation in observations {
+            let predicted = intercept + slope * observation.rhs
+            let residual = observation.lhs - predicted
+            residualSumSquares += residual * residual
+        }
+
+        let rSquared = totalSumSquaresY > 0 ? 1 - (residualSumSquares / totalSumSquaresY) : 0
+
+        // Needs at least one degree of freedom beyond the two fitted parameters.
+        var standardError: Double?
+        if observations.count > 2 {
+            let variance = residualSumSquares / (count - 2)
+            let value = (variance / sumSquaresX).squareRoot()
+            standardError = value.isFinite && value > 0 ? value : nil
+        }
+
+        return RegressionResult(
+            slope: slope,
+            intercept: intercept,
+            rSquared: Swift.min(Swift.max(rSquared, 0), 1),
+            standardErrorOfSlope: standardError,
+            sampleCount: observations.count
+        )
     }
 
     /// Pearson correlation of two aligned samples. `nil` when either sample is constant.

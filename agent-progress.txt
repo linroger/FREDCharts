@@ -262,3 +262,40 @@ Session log:
       basis points, index base periods, ratios, plus the relations schema and lazy load).
   - Next candidates: scatter/regression view between two series with R-squared, an explicit
     custom date range, and chart image export.
+
+- 2026-08-28 23:45–00:05 CST / branch: repair/full-audit
+  - Focus: /loop iteration 4 — relationship analysis between two series.
+  - Added:
+    - `SeriesAnalytics.linearRegression` (OLS with R-squared and the slope's standard
+      error) and `alignedObservations`, which keeps the date so a scatter can be shaded by
+      time. `alignedPairs` is now a thin projection of it, so there is one join, not two.
+    - A `Relationship` tab, present only while a comparison series is loaded: a date-shaded
+      scatter, a least-squares fit drawn across the observed x-range only, and R², slope,
+      t-statistic, and sample count.
+    - `RegressionResult.interpretation(xUnits:yUnits:)` states the fit as a magnitude
+      ("a one-percent increase goes with a 0.4 percent rise") rather than a bare
+      coefficient, and appends a caveat when the slope is smaller than twice its own
+      standard error.
+  - Design notes:
+    - Points are shaded by date because a single correlation coefficient cannot show a
+      regime shift; a Phillips-curve cloud that has moved is visible only over time.
+    - The fitted line is clipped to the observed x-range so it never implies a prediction
+      outside the data it was estimated from.
+    - Each axis carries its own series' units, since the scatters worth drawing are exactly
+      the ones whose series are not unit-comparable.
+    - The scatter regresses the windowed *source* series, not the displayed lines: in
+      spread mode the displayed line is already a difference, and regressing a series on a
+      difference of itself would be circular.
+    - Every fit is labelled as co-movement, not causation.
+    - The tab list is computed, so removing the last comparison series hides the tab and
+      moves the reader back to Overview rather than stranding them; Cmd-N indexes into the
+      visible tabs.
+    - The Overview's old correlation box was superseded and deleted outright rather than
+      left disabled.
+  - Verification:
+    - `xcodebuild ... build` -> BUILD SUCCEEDED, zero warnings.
+    - `xcodebuild ... -only-testing:FRED-UltraTests test` -> TEST SUCCEEDED, 131 tests
+      (7 new: exact coefficient recovery on a known fit, negative slopes, undefined fits
+      with no x-variation or too few points, the noisy-slope flag, dated alignment, and the
+      full relationship surface following and clearing its partner).
+  - Next candidates: explicit custom date range, chart image export, and saved workspaces.

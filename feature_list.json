@@ -138,6 +138,21 @@
     "passes": true
   },
   {
+    "id": "feature_relationship_analysis",
+    "category": "functional",
+    "description": "A Relationship tab plots the primary series against a comparison series as a date-shaded scatter with a least-squares fit, R-squared, slope, and t-statistic.",
+    "steps": [
+      "Open a series and add a comparison series",
+      "Switch to the Relationship tab",
+      "Confirm the scatter is shaded by date and the fitted line spans only the observed range",
+      "Confirm each axis is labelled with its own series' units",
+      "Switch the compared-against series when more than one is loaded",
+      "Confirm a slope smaller than its standard error is flagged as suggestive only",
+      "Remove the comparison series and confirm the tab disappears without stranding the view"
+    ],
+    "passes": true
+  },
+  {
     "id": "feature_spread_mode",
     "category": "functional",
     "description": "Spread mode charts the primary series minus each comparison series, moving statistics, the data table, and exports with it.",

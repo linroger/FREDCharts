@@ -726,6 +726,71 @@ struct AnalyticsTests {
         #expect(abs((negative ?? 0) + 1) < 0.000_001)
     }
 
+    /// A known fit: y = 2x + 1 with no noise must recover its own coefficients exactly.
+    @Test func regressionRecoversAKnownFit() throws {
+        let x = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4, 5])
+        let y = Fixture.monthly(start: "2024-01-01", values: [3, 5, 7, 9, 11])
+
+        // `alignedObservations` puts the first argument in `lhs`, which the regression
+        // treats as the dependent series.
+        let fit = try #require(SeriesAnalytics.linearRegression(SeriesAnalytics.alignedObservations(y, x)))
+
+        #expect(abs(fit.slope - 2) < 0.000_001)
+        #expect(abs(fit.intercept - 1) < 0.000_001)
+        #expect(abs(fit.rSquared - 1) < 0.000_001)
+        #expect(fit.sampleCount == 5)
+    }
+
+    @Test func regressionHandlesNegativeSlopesAndPartialFits() throws {
+        let x = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4, 5, 6])
+        let y = Fixture.monthly(start: "2024-01-01", values: [10, 8, 7, 5, 4, 2])
+
+        let fit = try #require(SeriesAnalytics.linearRegression(SeriesAnalytics.alignedObservations(y, x)))
+
+        #expect(fit.slope < 0)
+        #expect(fit.rSquared > 0.95)
+        #expect(fit.rSquared <= 1)
+        #expect(fit.isSlopeDistinguishableFromZero)
+    }
+
+    /// A fit needs variation in x and enough points to be defined at all.
+    @Test func regressionIsUndefinedWithoutVariationOrData() {
+        let x = Fixture.monthly(start: "2024-01-01", values: [5, 5, 5, 5])
+        let y = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4])
+
+        #expect(SeriesAnalytics.linearRegression(SeriesAnalytics.alignedObservations(y, x)) == nil)
+
+        let tooFew = Fixture.monthly(start: "2024-01-01", values: [1, 2])
+        #expect(SeriesAnalytics.linearRegression(SeriesAnalytics.alignedObservations(tooFew, tooFew)) == nil)
+        #expect(SeriesAnalytics.linearRegression([]) == nil)
+    }
+
+    /// A slope smaller than its own uncertainty must not be presented as a finding.
+    @Test func aNoisySlopeIsFlaggedAsIndistinguishableFromZero() throws {
+        let x = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4, 5, 6, 7, 8])
+        let y = Fixture.monthly(start: "2024-01-01", values: [5, -3, 6, -2, 4, -4, 5, -3])
+
+        let fit = try #require(SeriesAnalytics.linearRegression(SeriesAnalytics.alignedObservations(y, x)))
+
+        #expect(fit.isSlopeDistinguishableFromZero == false)
+        #expect(fit.interpretation(xUnits: "Percent", yUnits: "Percent").contains("suggestive at best"))
+    }
+
+    /// Alignment keeps the date so a scatter can shade by time.
+    @Test func alignedObservationsKeepTheirDates() {
+        let lhs = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3])
+        let rhs = Fixture.monthly(start: "2024-01-01", values: [10, 20, 30])
+
+        let aligned = SeriesAnalytics.alignedObservations(lhs, rhs)
+
+        #expect(aligned.count == 3)
+        #expect(aligned.map(\.date) == lhs.map(\.date))
+        #expect(aligned[1].lhs == 2)
+        #expect(aligned[1].rhs == 20)
+        // The pair-only helper stays consistent with the dated one.
+        #expect(SeriesAnalytics.alignedPairs(lhs, rhs).map(\.0) == [1, 2, 3])
+    }
+
     @Test func correlationIsUndefinedForConstantSeries() {
         let base = Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4])
         let flat = Fixture.monthly(start: "2024-01-01", values: [7, 7, 7, 7])
@@ -1514,6 +1579,79 @@ struct SeriesDetailViewModelTests {
         #expect(viewModel.spreadUnavailableReason?.contains("Add a comparison") == true)
         #expect(viewModel.visibleObservationCount == 2)
         #expect(viewModel.statistics?.latestValue == 4.2)
+    }
+
+    /// The relationship surface must follow the selected partner, and must clear itself
+    /// when that partner is removed.
+    @Test func scatterAndFitFollowTheSelectedPartner() async {
+        let inflation = Fixture.series(id: "CPI", title: "Inflation", units: "Percent", frequency: "Monthly")
+        let unemployment = Fixture.series(id: "UNRATE", title: "Unemployment", units: "Percent", frequency: "Monthly")
+        let wages = Fixture.series(id: "WAGES", title: "Wage Growth", units: "Percent", frequency: "Monthly")
+
+        let viewModel = SeriesDetailViewModel(
+            series: inflation,
+            comparisonSeries: [unemployment, wages],
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([
+                inflation.id: Fixture.monthly(start: "2024-01-01", values: [3, 5, 7, 9, 11]),
+                unemployment.id: Fixture.monthly(start: "2024-01-01", values: [1, 2, 3, 4, 5]),
+                wages.id: Fixture.monthly(start: "2024-01-01", values: [11, 9, 7, 5, 3])
+            ]),
+            recessionLoader: { [] },
+            relationsLoader: { SeriesRelations(seriesID: $0) }
+        )
+        await viewModel.loadData()
+
+        // Defaults to the first comparison series: CPI = 2 * UNRATE + 1.
+        #expect(viewModel.regressionPartner?.id == "UNRATE")
+        #expect(viewModel.scatterPoints.count == 5)
+        #expect(abs((viewModel.regression?.slope ?? 0) - 2) < 0.000_001)
+        #expect(viewModel.scatterXUnitsLabel == "Percent")
+        #expect(viewModel.scatterYUnitsLabel == "Percent")
+
+        viewModel.selectRegressionPartner(id: wages.id)
+        #expect(viewModel.regressionPartner?.id == "WAGES")
+        #expect((viewModel.regression?.slope ?? 0) < 0)
+
+        viewModel.removeSeries(id: wages.id)
+        #expect(viewModel.regressionPartner?.id == "UNRATE")
+        #expect(abs((viewModel.regression?.slope ?? 0) - 2) < 0.000_001)
+
+        viewModel.removeSeries(id: unemployment.id)
+        #expect(viewModel.scatterPoints.isEmpty)
+        #expect(viewModel.regression == nil)
+    }
+
+    /// Scatter axes use each series' own units, since the interesting scatters are
+    /// exactly the ones whose series are not unit-comparable.
+    @Test func scatterAxesLabelEachSeriesIndependently() async {
+        let gdp = Fixture.series(id: "GDP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+        let rate = Fixture.series(id: "UNRATE", units: "Percent", frequency: "Monthly")
+
+        let viewModel = SeriesDetailViewModel(
+            series: gdp,
+            comparisonSeries: [rate],
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([
+                gdp.id: Fixture.monthly(start: "2024-01-01", values: [100, 110, 120]),
+                rate.id: Fixture.monthly(start: "2024-01-01", values: [4, 3.8, 3.6])
+            ]),
+            recessionLoader: { [] },
+            relationsLoader: { SeriesRelations(seriesID: $0) }
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.scatterYUnitsLabel == "U.S. Dollars")
+        #expect(viewModel.scatterXUnitsLabel == "Percent")
+
+        // Under a growth transform both axes become percent.
+        viewModel.updateTransform(.periodPercentChange)
+        #expect(viewModel.scatterYUnitsLabel == "Percent")
+        #expect(viewModel.scatterXUnitsLabel == "Percent")
     }
 
     @Test func recessionShadingCanBeToggled() async {

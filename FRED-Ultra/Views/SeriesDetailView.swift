@@ -43,6 +43,11 @@ struct SeriesDetailView: View {
             await viewModel.setRecessionShading(settings.showsRecessionShading)
             await viewModel.loadData()
         }
+        .onChange(of: viewModel.canCompare) { _, _ in
+            if !availableTabs.contains(selectedTab) {
+                selectedTab = .overview
+            }
+        }
         .onAppear {
             commandCenter.register(
                 token: commandToken,
@@ -52,7 +57,7 @@ struct SeriesDetailView: View {
                     exportJSON: { export(.json) },
                     copyToClipboard: copyToClipboard,
                     selectTab: { index in
-                        let tabs = DetailTab.allCases
+                        let tabs = availableTabs
                         guard tabs.indices.contains(index) else { return }
                         selectedTab = tabs[index]
                     }
@@ -78,7 +83,7 @@ struct SeriesDetailView: View {
         } else {
             VStack(spacing: 0) {
                 Picker("View", selection: $selectedTab) {
-                    ForEach(DetailTab.allCases) { tab in
+                    ForEach(availableTabs) { tab in
                         Text(tab.rawValue).tag(tab)
                     }
                 }
@@ -92,10 +97,15 @@ struct SeriesDetailView: View {
                 switch selectedTab {
                 case .overview: overviewTab
                 case .data: dataTab
+                case .relationship: SeriesScatterView(viewModel: viewModel)
                 case .insights: insightsTab
                 }
             }
         }
+    }
+
+    private var availableTabs: [DetailTab] {
+        DetailTab.available(canCompare: viewModel.canCompare)
     }
 
     // MARK: Header
@@ -293,31 +303,6 @@ struct SeriesDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 SeriesChartView(viewModel: viewModel, selectedDate: $selectedDate)
-
-                if !viewModel.comparisonSummaries.isEmpty {
-                    GroupBox("Relationship to \(viewModel.mainSeries.id)") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            ForEach(viewModel.comparisonSummaries) { summary in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack {
-                                        Text(summary.seriesTitle)
-                                            .font(.headline)
-                                            .lineLimit(1)
-                                        Spacer()
-                                        Text("r = \(summary.formattedCorrelation)")
-                                            .font(.headline.monospacedDigit())
-                                    }
-                                    Text(summary.interpretation)
-                                        .font(.callout)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
-                    }
-                }
 
                 if viewModel.canCompare {
                     visibleSeriesSection
@@ -748,9 +733,15 @@ struct SeriesDetailView: View {
 private enum DetailTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
     case data = "Data"
+    case relationship = "Relationship"
     case insights = "Insights"
 
     var id: String { rawValue }
+
+    /// Relating a series to nothing is not a view worth offering.
+    static func available(canCompare: Bool) -> [DetailTab] {
+        canCompare ? allCases : allCases.filter { $0 != .relationship }
+    }
 }
 
 #Preview {

@@ -48,6 +48,10 @@ final class SeriesDetailViewModel: ObservableObject {
     /// Recession bands already clipped to the visible window.
     @Published private(set) var recessionIntervals: [DateInterval] = []
     @Published private(set) var relations: SeriesRelations?
+    /// Which comparison series the relationship surface is fitted against.
+    @Published private(set) var regressionPartnerID: String?
+    @Published private(set) var scatterPoints: [ScatterPoint] = []
+    @Published private(set) var regression: RegressionResult?
     @Published private(set) var isLoadingRelations = false
 
     // MARK: Storage
@@ -392,6 +396,38 @@ final class SeriesDetailViewModel: ObservableObject {
         rebuildDerivedState()
     }
 
+    /// Chooses which comparison series the scatter is fitted against.
+    func selectRegressionPartner(id seriesId: String) {
+        guard comparisonSeries.contains(where: { $0.id == seriesId }) else { return }
+        guard regressionPartnerID != seriesId else { return }
+
+        regressionPartnerID = seriesId
+        rebuildRelationship()
+    }
+
+    /// The comparison series currently on the scatter's x-axis.
+    var regressionPartner: FREDSeries? {
+        guard let regressionPartnerID else { return comparisonSeries.first }
+        return comparisonSeries.first { $0.id == regressionPartnerID } ?? comparisonSeries.first
+    }
+
+    /// Units label for each scatter axis. Each series keeps its own units, because the
+    /// interesting scatters are exactly the ones whose series are not unit-comparable.
+    var scatterYUnitsLabel: String {
+        Self.axisUnitsLabel(for: mainSeries, transform: transform)
+    }
+
+    var scatterXUnitsLabel: String {
+        guard let partner = regressionPartner else { return "Value" }
+        return Self.axisUnitsLabel(for: partner, transform: transform)
+    }
+
+    private static func axisUnitsLabel(for series: FREDSeries, transform: SeriesTransform) -> String {
+        let units = transform.resultUnits(baseUnits: series.units)
+        let label = UnitDescriptor.cached(units: units).presentationUnits
+        return label.isEmpty ? "Value" : label
+    }
+
     func updateChartMode(_ mode: ChartMode) {
         guard chartMode != mode else { return }
         guard mode == .overlay || canUseSpreadMode else { return }
@@ -522,6 +558,31 @@ final class SeriesDetailViewModel: ObservableObject {
         rebuildComparisonSummaries()
         rebuildUnitsNotice(sharedScale: sharedScale)
         rebuildRecessionIntervals()
+        rebuildRelationship()
+    }
+
+    /// Builds the scatter and its fit for the primary series against the selected
+    /// comparison series.
+    ///
+    /// Uses the windowed source series rather than the displayed lines: in spread mode the
+    /// displayed line is already a difference, and regressing a series on a difference of
+    /// itself would be circular.
+    private func rebuildRelationship() {
+        if let regressionPartnerID, !comparisonSeries.contains(where: { $0.id == regressionPartnerID }) {
+            self.regressionPartnerID = nil
+        }
+
+        guard let partner = regressionPartner,
+              let base = windowedSeries[mainSeries.id], !base.isEmpty,
+              let other = windowedSeries[partner.id], !other.isEmpty else {
+            scatterPoints = []
+            regression = nil
+            return
+        }
+
+        let aligned = SeriesAnalytics.alignedObservations(base, other)
+        scatterPoints = aligned.map { ScatterPoint(date: $0.date, x: $0.rhs, y: $0.lhs) }
+        regression = SeriesAnalytics.linearRegression(aligned)
     }
 
     /// Clips the recession bands to the plotted date span so Swift Charts is never asked
