@@ -232,15 +232,21 @@ extension UnitDescriptor {
 struct ValueFormatter: Sendable {
     let descriptor: UnitDescriptor
     let locale: Locale
+    /// True when every value being formatted is a difference rather than a level, as in
+    /// spread mode. Differences between percentages are percentage points, and a level
+    /// formatter would label them "%" — understating them by a factor of the base.
+    let representsDifference: Bool
 
-    init(units: String, locale: Locale = .autoupdatingCurrent) {
+    init(units: String, locale: Locale = .autoupdatingCurrent, representsDifference: Bool = false) {
         self.descriptor = .cached(units: units)
         self.locale = locale
+        self.representsDifference = representsDifference
     }
 
-    init(descriptor: UnitDescriptor, locale: Locale = .autoupdatingCurrent) {
+    init(descriptor: UnitDescriptor, locale: Locale = .autoupdatingCurrent, representsDifference: Bool = false) {
         self.descriptor = descriptor
         self.locale = locale
+        self.representsDifference = representsDifference
     }
 
     /// Unit label used when a value represents a *difference* or a dispersion rather
@@ -252,6 +258,10 @@ struct ValueFormatter: Sendable {
 
     func formatValue(_ value: Double, compact: Bool) -> String {
         guard value.isFinite else { return "—" }
+
+        if representsDifference {
+            return Self.sign(for: value) + formatMagnitude(value, compact: compact)
+        }
 
         switch descriptor.family {
         case .percent:
@@ -267,6 +277,11 @@ struct ValueFormatter: Sendable {
 
     func formatAxisValue(_ value: Double) -> String {
         guard value.isFinite else { return "" }
+
+        // Axis labels stay unsigned for positives; a column of "+" reads as noise.
+        if representsDifference {
+            return Self.negativePrefix(value) + formatMagnitude(value, compact: true)
+        }
 
         switch descriptor.family {
         case .percent:
@@ -306,7 +321,9 @@ struct ValueFormatter: Sendable {
 
         let text = grouped(abs(value), fractionDigits: 6)
         let signed = Self.negativePrefix(value) + text
-        return descriptor.family == .percent ? signed + "%" : signed
+
+        guard descriptor.family == .percent else { return signed }
+        return representsDifference ? signed + " pp" : signed + "%"
     }
 
     /// Signed published-scale difference, matching `formatPrecise`.
@@ -320,7 +337,10 @@ struct ValueFormatter: Sendable {
 
     /// Human label for values produced by `formatValue` / `formatAxisValue`.
     var presentationUnits: String {
-        descriptor.presentationUnits
+        guard representsDifference, descriptor.family == .percent else {
+            return descriptor.presentationUnits
+        }
+        return "Percentage Points"
     }
 
     static func sign(for value: Double) -> String {

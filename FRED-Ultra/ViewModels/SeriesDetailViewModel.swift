@@ -23,6 +23,7 @@ final class SeriesDetailViewModel: ObservableObject {
     @Published private(set) var selectedRange: DateRangeOption
     @Published private(set) var transform: SeriesTransform = .level
     @Published private(set) var movingAverage: MovingAverageOption = .off
+    @Published private(set) var chartMode: ChartMode = .overlay
 
     // MARK: Status
 
@@ -50,12 +51,23 @@ final class SeriesDetailViewModel: ObservableObject {
     private var fullHistory: [String: [SeriesDataPoint]] = [:]
     private var recessionSource: [SeriesDataPoint] = []
     private var windowedSeries: [String: [SeriesDataPoint]] = [:]
+    /// The lines actually drawn: the source series in overlay mode, or the computed
+    /// spreads in spread mode. Everything downstream — chart, statistics, table, export —
+    /// reads from here, so the numbers can never disagree with the chart.
+    private var displayedSeries: [DisplayedSeries] = []
     private var tableRowsCache: (token: Int, rows: [ObservationRow])?
 
     private var derivedToken = 0
     private var loadToken = 0
     /// Once the reader picks a transform, the app stops choosing one for them.
     private var transformChosenByUser = false
+
+    /// One plotted line, whether it came straight from FRED or was computed.
+    struct DisplayedSeries: Identifiable, Sendable {
+        let id: String
+        let title: String
+        let points: [SeriesDataPoint]
+    }
 
     private let loader: ObservationsLoader
     private let recessionLoader: RecessionLoader
@@ -114,7 +126,7 @@ final class SeriesDetailViewModel: ObservableObject {
     /// Units of the values the chart and metric tiles render, which is not always the
     /// series' raw units — a "Billions of Dollars" series is charted in dollars.
     var displayUnitsLabel: String {
-        let label = UnitDescriptor.cached(units: displayUnits).presentationUnits
+        let label = valueFormatter.presentationUnits
         return label.isEmpty ? "Value" : label
     }
 
@@ -124,19 +136,44 @@ final class SeriesDetailViewModel: ObservableObject {
     }
 
     var chartSectionTitle: String {
-        canCompare ? "Comparison Chart — \(displayUnitsLabel)" : "Series Chart — \(displayUnitsLabel)"
+        switch chartMode {
+        case .spread:
+            return "Spread Chart — \(displayUnitsLabel)"
+        case .overlay:
+            return canCompare ? "Comparison Chart — \(displayUnitsLabel)" : "Series Chart — \(displayUnitsLabel)"
+        }
+    }
+
+    /// Spreads are only meaningful between series measured in the same thing.
+    var canUseSpreadMode: Bool {
+        canCompare && Self.unitsAreComparable(allSeries)
+    }
+
+    var spreadUnavailableReason: String? {
+        if !canCompare {
+            return "Add a comparison series to chart a spread."
+        }
+        if !Self.unitsAreComparable(allSeries) {
+            return "A spread needs series measured in the same units."
+        }
+        return nil
+    }
+
+    /// The line the statistics, data table, and metric tiles describe.
+    private var primaryDisplayPoints: [SeriesDataPoint] {
+        displayedSeries.first?.points ?? []
     }
 
     /// Date of the newest visible observation, without materialising the table rows.
     var latestVisibleDate: Date? {
-        windowedSeries[mainSeries.id]?.last?.date
+        primaryDisplayPoints.last?.date
     }
 
     /// Number of dated rows an export would contain across every visible series.
     var exportRowCount: Int {
         var dates = Set<Date>()
-        for series in allSeries {
-            for point in windowedSeries[series.id] ?? [] {
+        for line in displayedSeries {
+            for point in line.points {
                 dates.insert(point.date)
             }
         }
@@ -154,7 +191,7 @@ final class SeriesDetailViewModel: ObservableObject {
 
     /// History exists, but the chosen window contains none of it.
     var isWindowEmpty: Bool {
-        hasLoadedHistory && (windowedSeries[mainSeries.id]?.isEmpty ?? true)
+        hasLoadedHistory && primaryDisplayPoints.isEmpty
     }
 
     var emptyWindowMessage: String {
@@ -189,7 +226,7 @@ final class SeriesDetailViewModel: ObservableObject {
     }
 
     var valueFormatter: ValueFormatter {
-        ValueFormatter(units: displayUnits)
+        ValueFormatter(units: displayUnits, representsDifference: chartMode == .spread)
     }
 
     // MARK: Loading
@@ -315,6 +352,14 @@ final class SeriesDetailViewModel: ObservableObject {
         rebuildDerivedState()
     }
 
+    func updateChartMode(_ mode: ChartMode) {
+        guard chartMode != mode else { return }
+        guard mode == .overlay || canUseSpreadMode else { return }
+
+        chartMode = mode
+        rebuildDerivedState()
+    }
+
     func updateMovingAverage(_ option: MovingAverageOption) {
         guard movingAverage != option else { return }
         movingAverage = option
@@ -325,6 +370,26 @@ final class SeriesDetailViewModel: ObservableObject {
 
     func makeExportPayload() -> ExportPayload {
         let baseUnits = effectiveBaseUnits
+
+        // Exports mirror the chart, so spread mode exports the spreads rather than the
+        // series they were derived from.
+        guard chartMode == .overlay else {
+            return ExportPayload(
+                rangeLabel: selectedRange.rawValue,
+                transform: transform,
+                columns: displayedSeries.map { line in
+                    ExportPayload.SeriesColumn(
+                        id: line.id,
+                        title: line.title,
+                        units: displayUnitsLabel,
+                        frequency: mainSeries.frequency,
+                        seasonalAdjustment: mainSeries.seasonalAdjustment,
+                        points: line.points
+                    )
+                }
+            )
+        }
+
         return ExportPayload(
             rangeLabel: selectedRange.rawValue,
             transform: transform,
@@ -409,9 +474,10 @@ final class SeriesDetailViewModel: ObservableObject {
         }
 
         windowedSeries = newWindowed
-        visibleObservationCount = newWindowed[mainSeries.id]?.count ?? 0
+        rebuildDisplayedSeries()
+        visibleObservationCount = primaryDisplayPoints.count
 
-        rebuildChartPoints(for: series)
+        rebuildChartPoints()
         rebuildStatisticsAndInsights()
         rebuildComparisonSummaries()
         rebuildUnitsNotice(sharedScale: sharedScale)
@@ -426,7 +492,7 @@ final class SeriesDetailViewModel: ObservableObject {
             return
         }
 
-        let dates = windowedSeries.values.flatMap { [$0.first?.date, $0.last?.date] }.compactMap { $0 }
+        let dates = displayedSeries.flatMap { [$0.points.first?.date, $0.points.last?.date] }.compactMap { $0 }
         guard let earliest = dates.min(), let latest = dates.max(), latest > earliest else {
             recessionIntervals = []
             return
@@ -438,37 +504,63 @@ final class SeriesDetailViewModel: ObservableObject {
         )
     }
 
-    private func rebuildChartPoints(for series: [FREDSeries]) {
+    /// Resolves the windowed source series into the lines that are actually drawn.
+    ///
+    /// Spread mode falls back to overlay if it stops being available — for instance when
+    /// the comparison series it was differencing against is removed.
+    private func rebuildDisplayedSeries() {
+        if chartMode == .spread, !canUseSpreadMode {
+            chartMode = .overlay
+        }
+
+        switch chartMode {
+        case .overlay:
+            displayedSeries = allSeries.map { series in
+                DisplayedSeries(id: series.id, title: series.title, points: windowedSeries[series.id] ?? [])
+            }
+
+        case .spread:
+            let base = windowedSeries[mainSeries.id] ?? []
+            displayedSeries = comparisonSeries.map { other in
+                DisplayedSeries(
+                    id: "\(mainSeries.id)-\(other.id)",
+                    title: "\(mainSeries.id) − \(other.id)",
+                    points: SeriesAnalytics.spread(base, minus: windowedSeries[other.id] ?? [])
+                )
+            }
+        }
+    }
+
+    private func rebuildChartPoints() {
         var points: [ChartDataPoint] = []
         var downsampled = false
 
-        for entry in series {
-            let window = windowedSeries[entry.id] ?? []
-            guard !window.isEmpty else { continue }
+        for line in displayedSeries {
+            guard !line.points.isEmpty else { continue }
 
-            let display = SeriesAnalytics.downsample(window, threshold: chartPointBudget)
-            if display.count < window.count { downsampled = true }
+            let display = SeriesAnalytics.downsample(line.points, threshold: chartPointBudget)
+            if display.count < line.points.count { downsampled = true }
 
             points.reserveCapacity(points.count + display.count)
             for point in display {
                 points.append(
-                    ChartDataPoint(seriesId: entry.id, seriesTitle: entry.title, date: point.date, value: point.value)
+                    ChartDataPoint(seriesId: line.id, seriesTitle: line.title, date: point.date, value: point.value)
                 )
             }
         }
 
-        // The overlay is averaged at full resolution, then downsampled for drawing, so
-        // smoothing is not applied to already-thinned data.
+        // Averaged at full resolution, then downsampled for drawing, so smoothing is
+        // never applied to already-thinned data.
         if let window = movingAverage.window(for: mainSeries.seriesFrequency),
-           let mainWindow = windowedSeries[mainSeries.id], mainWindow.count >= window {
-            let averaged = SeriesAnalytics.movingAverage(mainWindow, window: window)
+           let primary = displayedSeries.first, primary.points.count >= window {
+            let averaged = SeriesAnalytics.movingAverage(primary.points, window: window)
             let display = SeriesAnalytics.downsample(averaged, threshold: chartPointBudget)
 
             for point in display {
                 points.append(
                     ChartDataPoint(
-                        seriesId: mainSeries.id,
-                        seriesTitle: mainSeries.title,
+                        seriesId: primary.id,
+                        seriesTitle: primary.title,
                         date: point.date,
                         value: point.value,
                         role: .movingAverage
@@ -482,8 +574,7 @@ final class SeriesDetailViewModel: ObservableObject {
     }
 
     private func rebuildStatisticsAndInsights() {
-        let window = windowedSeries[mainSeries.id] ?? []
-        statistics = SeriesStatistics.make(points: window, units: displayUnits)
+        statistics = SeriesStatistics.make(points: primaryDisplayPoints, units: displayUnits)
         insights = buildInsights()
     }
 
@@ -523,7 +614,7 @@ final class SeriesDetailViewModel: ObservableObject {
 
         // Compound growth and drawdown only describe levels; on a growth-rate series they
         // would compound a rate of change, which is not a meaningful quantity.
-        if transform == .level {
+        if transform == .level, chartMode == .overlay {
             if statistics.annualizedChange != nil {
                 cards.insert(
                     SeriesInsight(
@@ -576,7 +667,8 @@ final class SeriesDetailViewModel: ObservableObject {
     }
 
     private func rebuildComparisonSummaries() {
-        guard canCompare, let mainWindow = windowedSeries[mainSeries.id], !mainWindow.isEmpty else {
+        guard chartMode == .overlay, canCompare,
+              let mainWindow = windowedSeries[mainSeries.id], !mainWindow.isEmpty else {
             comparisonSummaries = []
             return
         }
@@ -627,14 +719,13 @@ final class SeriesDetailViewModel: ObservableObject {
     /// Reads full-resolution windowed data rather than the downsampled chart points, so
     /// the hover readout reports the real observation even when the chart is thinned.
     func nearestPoints(to date: Date) -> [ChartDataPoint] {
-        allSeries.compactMap { series in
-            guard let window = windowedSeries[series.id],
-                  let index = Self.nearestIndex(in: window, to: date) else { return nil }
+        displayedSeries.compactMap { line in
+            guard let index = Self.nearestIndex(in: line.points, to: date) else { return nil }
 
-            let point = window[index]
+            let point = line.points[index]
             return ChartDataPoint(
-                seriesId: series.id,
-                seriesTitle: series.title,
+                seriesId: line.id,
+                seriesTitle: line.title,
                 date: point.date,
                 value: point.value
             )
@@ -667,10 +758,10 @@ final class SeriesDetailViewModel: ObservableObject {
     }
 
     private func buildTableRows() -> [ObservationRow] {
-        let window = windowedSeries[mainSeries.id] ?? []
+        let window = primaryDisplayPoints
         guard !window.isEmpty else { return [] }
 
-        let formatter = ValueFormatter(units: displayUnits)
+        let formatter = valueFormatter
         var rows: [ObservationRow] = []
         rows.reserveCapacity(window.count)
 

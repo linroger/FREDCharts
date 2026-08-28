@@ -180,3 +180,34 @@ Session log:
   - Next candidates: spread mode (series A minus series B, for yield curves and real
     rates), a scatter/regression view between two series, an explicit custom date range,
     and chart image export.
+
+- 2026-08-28 08:11–08:35 CST / branch: repair/full-audit
+  - Focus: /loop iteration 2 — spread mode (series A minus series B).
+  - Added:
+    - `SeriesAnalytics.spread(_:minus:)` and a `ChartMode` of Overlay / Spread (A − B).
+      Charts a yield curve (DGS10 − DGS2), a real rate (DGS10 − T10YIE), an unemployment
+      gap (UNRATE − NROU), or a credit spread (BAA − AAA) directly.
+    - A `DisplayedSeries` layer between windowing and rendering. The chart, statistics,
+      data table, hover readout, recession band extents, and exports now all read from it,
+      so a spread cannot show one thing on the chart and another in the table.
+    - `ValueFormatter.representsDifference`: a spread of two rates is measured in
+      percentage points, and every surface labels it that way.
+    - Spread mode is offered only when the units are comparable, states why when it is not,
+      and falls back to Overlay when the series it was differencing against is removed.
+  - Mistake caught by a test, and the design change it forced:
+    - The first implementation matched the subtrahend by *nearest date*. The mixed-cadence
+      test then returned 5 points where 6 were expected: with a monthly minuend and a
+      quarterly subtrahend, the third month of each quarter sits 61 days from the quarter
+      start and fell outside the tolerance. Nearest-date matching therefore punches a
+      silent hole in the last month of every quarter.
+    - Replaced with last-observation-carried-forward bounded by one subtrahend period,
+      which is the standard treatment: a quarterly reading describes its whole quarter.
+      The bound stops a series that has stopped publishing from being differenced against
+      indefinitely, and points predating the subtrahend are dropped, never extrapolated.
+  - Verification:
+    - `xcodebuild ... build` -> BUILD SUCCEEDED, zero warnings.
+    - `xcodebuild ... -only-testing:FRED-UltraTests test` -> TEST SUCCEEDED, 109 tests
+      (9 new, including the carry-forward window, the backward-extrapolation guard, and
+      the full spread-mode surface).
+  - Next candidates: scatter/regression view between two series (Phillips curve, Okun's
+    law) with R-squared, an explicit custom date range, and chart image export.

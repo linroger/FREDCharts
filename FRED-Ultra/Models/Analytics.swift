@@ -227,6 +227,49 @@ enum SeriesAnalytics {
         return Array(points[firstIndex...])
     }
 
+    // MARK: Spreads
+
+    /// Point-wise difference between two series, on the minuend's date grid.
+    ///
+    /// This is how a yield curve (10Y − 2Y), a real rate (nominal − breakeven), or an
+    /// unemployment gap (actual − natural) is built.
+    ///
+    /// The subtrahend is carried forward rather than matched to the nearest date, because
+    /// a lower-frequency reading describes its whole period: a quarterly value dated
+    /// 1 April covers April, May, and June. Nearest-date matching drops the last month of
+    /// every quarter, which silently punches holes in any mixed-frequency spread.
+    ///
+    /// A value is carried for at most one of its own periods, so a series that stopped
+    /// publishing cannot be differenced against indefinitely, and minuend points that
+    /// predate every subtrahend observation are dropped rather than extrapolated.
+    static func spread(_ minuend: [SeriesDataPoint], minus subtrahend: [SeriesDataPoint]) -> [SeriesDataPoint] {
+        guard !minuend.isEmpty, !subtrahend.isEmpty else { return [] }
+
+        let maximumAge = Swift.max(medianSpacing(subtrahend) ?? 86_400, 86_400)
+
+        var result: [SeriesDataPoint] = []
+        result.reserveCapacity(minuend.count)
+        var searchIndex = 0
+
+        for point in minuend {
+            // Monotonic scan: minuend dates ascend, so the carried value never moves back.
+            while searchIndex + 1 < subtrahend.count, subtrahend[searchIndex + 1].date <= point.date {
+                searchIndex += 1
+            }
+
+            let candidate = subtrahend[searchIndex]
+            let age = point.date.timeIntervalSince(candidate.date)
+            guard age >= 0, age <= maximumAge else { continue }
+
+            let difference = point.value - candidate.value
+            guard difference.isFinite else { continue }
+
+            result.append(SeriesDataPoint(date: point.date, value: difference))
+        }
+
+        return result
+    }
+
     // MARK: Recessions
 
     /// Converts an NBER 0/1 recession indicator into shadeable date intervals.

@@ -40,7 +40,9 @@ struct SeriesChartView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
-                    Text(viewModel.transformExplanation)
+                    Text(viewModel.chartMode == .spread
+                         ? viewModel.chartMode.explanation
+                         : viewModel.transformExplanation)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

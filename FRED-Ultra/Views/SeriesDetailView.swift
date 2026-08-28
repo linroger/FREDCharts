@@ -211,6 +211,23 @@ struct SeriesDetailView: View {
             .accessibilityLabel("Trend line")
             .accessibilityIdentifier("detail.trendPicker")
 
+            if viewModel.canUseSpreadMode || viewModel.chartMode == .spread {
+                Picker("Chart Mode", selection: Binding(
+                    get: { viewModel.chartMode },
+                    set: { viewModel.updateChartMode($0) }
+                )) {
+                    ForEach(ChartMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .help(viewModel.chartMode.explanation)
+                .accessibilityLabel("Chart mode")
+                .accessibilityIdentifier("detail.chartModePicker")
+            }
+
             Toggle("Recessions", isOn: Binding(
                 get: { viewModel.showsRecessionShading },
                 set: { enabled in

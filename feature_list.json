@@ -112,6 +112,20 @@
     "passes": true
   },
   {
+    "id": "feature_spread_mode",
+    "category": "functional",
+    "description": "Spread mode charts the primary series minus each comparison series, moving statistics, the data table, and exports with it.",
+    "steps": [
+      "Open a rate series and add a second rate series",
+      "Switch the chart mode to Spread (A - B)",
+      "Confirm the chart plots the difference and the units read percentage points",
+      "Confirm the statistics, data table, and export all describe the spread",
+      "Confirm the mode is unavailable for series with incompatible units",
+      "Remove the comparison series and confirm the chart falls back to Overlay"
+    ],
+    "passes": true
+  },
+  {
     "id": "feature_export_share",
     "category": "functional",
     "description": "Users can export exactly what they see to CSV/JSON and copy it to the clipboard, with success and failure both reported.",

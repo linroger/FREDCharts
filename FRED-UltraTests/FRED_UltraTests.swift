@@ -294,6 +294,24 @@ struct UnitTests {
         #expect(formatter.formatChange(-1_000, compact: true) == "-$1.0T")
     }
 
+    /// A difference between two rates is measured in percentage points, and the label
+    /// must say so — calling it "%" understates it by the size of the base.
+    @Test func differenceFormattingUsesPercentagePoints() {
+        let delta = ValueFormatter(units: "Percent", locale: Locale(identifier: "en_US"), representsDifference: true)
+
+        #expect(delta.presentationUnits == "Percentage Points")
+        #expect(delta.formatValue(-0.5, compact: false) == "-0.50 pp")
+        #expect(delta.formatValue(0.25, compact: false) == "+0.25 pp")
+        #expect(delta.formatPrecise(-0.5) == "-0.5 pp")
+        // Axis labels stay unsigned for positives; a column of "+" is noise.
+        #expect(delta.formatAxisValue(0.25) == "0.2 pp")
+        #expect(delta.formatAxisValue(-0.25) == "-0.2 pp")
+
+        let level = ValueFormatter(units: "Percent", locale: Locale(identifier: "en_US"))
+        #expect(level.presentationUnits == "Percent")
+        #expect(level.formatValue(0.25, compact: false) == "0.25%")
+    }
+
     @Test func nonFiniteValuesAreRenderedAsPlaceholders() {
         let formatter = ValueFormatter(units: "Index")
         #expect(formatter.formatValue(.nan, compact: false) == "—")
@@ -449,6 +467,69 @@ struct AnalyticsTests {
 
     /// USREC is 1 for every month from the month after a peak through the trough, so a
     /// run of 1s is one recession band.
+    /// A yield curve is one series minus another. Matching is by nearest date so a
+    /// monthly series can be differenced against a quarterly one.
+    @Test func spreadSubtractsOnTheMinuendDateGrid() {
+        let tenYear = Fixture.monthly(start: "2024-01-01", values: [4.0, 4.2, 4.1])
+        let twoYear = Fixture.monthly(start: "2024-01-01", values: [4.5, 4.4, 3.9])
+
+        let spread = SeriesAnalytics.spread(tenYear, minus: twoYear)
+
+        #expect(spread.count == 3)
+        #expect(abs(spread[0].value - (-0.5)) < 0.000_001)
+        #expect(abs(spread[1].value - (-0.2)) < 0.000_001)
+        #expect(abs(spread[2].value - 0.2) < 0.000_001)
+        #expect(spread.map(\.date) == tenYear.map(\.date))
+    }
+
+    /// A quarterly value describes its whole quarter, so every month of that quarter must
+    /// be differenced against it. Nearest-date matching dropped the third month.
+    @Test func spreadCarriesALowerFrequencySeriesAcrossItsPeriod() {
+        let monthly = Fixture.monthly(start: "2024-01-01", values: [10, 11, 12, 13, 14, 15])
+        let quarterly = Fixture.points([("2024-01-01", 1), ("2024-04-01", 2)])
+
+        let spread = SeriesAnalytics.spread(monthly, minus: quarterly)
+
+        #expect(spread.count == 6)
+        #expect(spread.map(\.value) == [9, 10, 11, 11, 12, 13])
+    }
+
+    /// A series that stopped publishing must not be carried forward for ever.
+    @Test func spreadStopsCarryingAfterOnePeriod() {
+        let monthly = Fixture.monthly(start: "2024-01-01", values: [10, 11, 12, 13])
+        let stale = Fixture.points([("2024-01-01", 1)])
+
+        let spread = SeriesAnalytics.spread(monthly, minus: stale)
+
+        // One observation has no measurable cadence, so it is carried a single day.
+        #expect(spread.count == 1)
+        #expect(spread[0].value == 9)
+    }
+
+    /// Minuend points that predate every subtrahend observation are dropped, never
+    /// extrapolated backwards.
+    @Test func spreadDoesNotExtrapolateBackwards() {
+        let monthly = Fixture.monthly(start: "2024-01-01", values: [10, 11, 12])
+        let laterStart = Fixture.points([("2024-02-01", 1), ("2024-03-01", 2)])
+
+        let spread = SeriesAnalytics.spread(monthly, minus: laterStart)
+
+        #expect(spread.count == 2)
+        #expect(spread[0].date == monthly[1].date)
+        #expect(spread.map(\.value) == [10, 10])
+    }
+
+    /// Points with no counterpart inside tolerance are dropped rather than differenced
+    /// against a stale value from months away.
+    @Test func spreadDropsUnmatchablePoints() {
+        let recent = Fixture.monthly(start: "2024-01-01", values: [10, 11])
+        let ancient = Fixture.monthly(start: "1990-01-01", values: [1, 2])
+
+        #expect(SeriesAnalytics.spread(recent, minus: ancient).isEmpty)
+        #expect(SeriesAnalytics.spread([], minus: recent).isEmpty)
+        #expect(SeriesAnalytics.spread(recent, minus: []).isEmpty)
+    }
+
     @Test func recessionRunsBecomeShadeableIntervals() throws {
         let points = Fixture.monthly(start: "2019-11-01", values: [0, 0, 0, 0, 1, 1, 0, 0])
         let intervals = SeriesAnalytics.recessionIntervals(from: points)
@@ -1199,6 +1280,112 @@ struct SeriesDetailViewModelTests {
 
     /// Shading is a chart preference: turning it off must clear the bands, and turning it
     /// on must fetch the indicator without touching the series load.
+    /// Spread mode must move the entire surface — chart, statistics, table, and export —
+    /// or the numbers would contradict the chart.
+    @Test func spreadModeDrivesEverySurface() async {
+        let tenYear = Fixture.series(id: "DGS10", title: "10-Year Treasury", units: "Percent", frequency: "Monthly")
+        let twoYear = Fixture.series(id: "DGS2", title: "2-Year Treasury", units: "Percent", frequency: "Monthly")
+
+        let viewModel = SeriesDetailViewModel(
+            series: tenYear,
+            comparisonSeries: [twoYear],
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([
+                tenYear.id: Fixture.monthly(start: "2024-01-01", values: [4.0, 4.2, 4.1]),
+                twoYear.id: Fixture.monthly(start: "2024-01-01", values: [4.5, 4.4, 3.9])
+            ]),
+            recessionLoader: { [] }
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.canUseSpreadMode)
+        #expect(viewModel.spreadUnavailableReason == nil)
+
+        viewModel.updateChartMode(.spread)
+
+        #expect(viewModel.chartMode == .spread)
+        #expect(viewModel.chartSectionTitle.hasPrefix("Spread Chart"))
+        #expect(viewModel.displayUnitsLabel == "Percentage Points")
+
+        // One line, carrying the differences rather than either source series.
+        let plotted = viewModel.chartPoints.filter { $0.role == .observed }
+        #expect(plotted.count == 3)
+        #expect(plotted.allSatisfy { $0.seriesTitle == "DGS10 − DGS2" })
+        #expect(abs((plotted.first?.value ?? 0) - (-0.5)) < 0.000_001)
+
+        // Statistics and the table describe the spread.
+        #expect(abs((viewModel.statistics?.latestValue ?? 0) - 0.2) < 0.000_001)
+        #expect(viewModel.visibleObservationCount == 3)
+        #expect(viewModel.tableRows.first?.formattedValue.contains("pp") == true)
+
+        // The export mirrors the chart.
+        let payload = viewModel.makeExportPayload()
+        #expect(payload.columns.count == 1)
+        #expect(payload.columns[0].id == "DGS10-DGS2")
+        #expect(abs(payload.columns[0].points[0].value - (-0.5)) < 0.000_001)
+
+        // Correlation compares source series, which the spread has already collapsed.
+        #expect(viewModel.comparisonSummaries.isEmpty)
+    }
+
+    /// Differencing a rate against a dollar figure is meaningless, so the mode is refused.
+    @Test func spreadModeIsRefusedForIncompatibleUnits() async {
+        let gdp = Fixture.series(id: "GDP", units: "Billions of Dollars", frequency: "Quarterly", frequencyShort: "Q")
+        let rate = Fixture.series(id: "UNRATE", units: "Percent", frequency: "Monthly")
+
+        let viewModel = SeriesDetailViewModel(
+            series: gdp,
+            comparisonSeries: [rate],
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([
+                gdp.id: Fixture.monthly(start: "2024-01-01", values: [100, 110]),
+                rate.id: Fixture.monthly(start: "2024-01-01", values: [4, 3.8])
+            ]),
+            recessionLoader: { [] }
+        )
+        await viewModel.loadData()
+
+        #expect(viewModel.canUseSpreadMode == false)
+        #expect(viewModel.spreadUnavailableReason?.contains("same units") == true)
+
+        viewModel.updateChartMode(.spread)
+        #expect(viewModel.chartMode == .overlay)
+    }
+
+    /// Removing the series being subtracted leaves nothing to difference, so the chart
+    /// must fall back rather than render an empty spread.
+    @Test func spreadModeFallsBackWhenItsCounterpartIsRemoved() async {
+        let tenYear = Fixture.series(id: "DGS10", units: "Percent", frequency: "Monthly")
+        let twoYear = Fixture.series(id: "DGS2", units: "Percent", frequency: "Monthly")
+
+        let viewModel = SeriesDetailViewModel(
+            series: tenYear,
+            comparisonSeries: [twoYear],
+            selectedRange: .all,
+            calendar: Fixture.calendar,
+            showsRecessionShading: false,
+            loader: Fixture.loader([
+                tenYear.id: Fixture.monthly(start: "2024-01-01", values: [4.0, 4.2]),
+                twoYear.id: Fixture.monthly(start: "2024-01-01", values: [4.5, 4.4])
+            ]),
+            recessionLoader: { [] }
+        )
+        await viewModel.loadData()
+        viewModel.updateChartMode(.spread)
+        #expect(viewModel.chartMode == .spread)
+
+        viewModel.removeSeries(id: twoYear.id)
+
+        #expect(viewModel.chartMode == .overlay)
+        #expect(viewModel.spreadUnavailableReason?.contains("Add a comparison") == true)
+        #expect(viewModel.visibleObservationCount == 2)
+        #expect(viewModel.statistics?.latestValue == 4.2)
+    }
+
     @Test func recessionShadingCanBeToggled() async {
         let series = Fixture.series(id: "TEST", units: "Index", frequency: "Monthly")
         let recession = Fixture.monthly(start: "2019-11-01", values: [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0])

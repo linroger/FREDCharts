@@ -105,6 +105,27 @@ enum SeriesTransform: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Chart Mode
+
+/// How the visible series are combined into plotted lines.
+enum ChartMode: String, CaseIterable, Identifiable, Sendable {
+    /// Every series drawn on a shared axis.
+    case overlay = "Overlay"
+    /// The primary series minus each comparison series.
+    case spread = "Spread (A − B)"
+
+    var id: String { rawValue }
+
+    var explanation: String {
+        switch self {
+        case .overlay:
+            return "Each series is drawn on a shared value axis."
+        case .spread:
+            return "Plots the primary series minus each comparison series — a yield curve, a real rate, or a gap."
+        }
+    }
+}
+
 // MARK: - Moving Average
 
 /// Optional trend overlay drawn on top of the primary series.
